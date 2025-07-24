@@ -2,6 +2,7 @@
 # ─── 1. Prerequisites & Policies ───────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# cmake_minimum_required(3.18.2): need CMP0091 policy + target properties support
 cmake_minimum_required(VERSION 3.18.2)
 
 # CMP0091: Enable MSVC runtime library selection via CMAKE_MSVC_RUNTIME_LIBRARY
@@ -51,7 +52,7 @@ option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ─── 4. Find Dependencies ─────────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Chrono Integration ──
 # Important! To ensure ABI compatibility, use the same C++ standard
@@ -59,17 +60,40 @@ option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
 set(CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD ${CHRONO_CXX_STANDARD})
 
-# If using Irrlicht, require Chrono built with Irrlicht support
-if(HYDROCHRONO_ENABLE_IRRLICHT)
-	find_package(Chrono COMPONENTS Irrlicht CONFIG REQUIRED)
-	add_compile_definitions(HYDROCHRONO_HAVE_IRRLICHT=1)
-else()
-	find_package(Chrono CONFIG REQUIRED)
+# Add Chrono's cmake path so its custom FindIrrlicht module is discoverable
+if(DEFINED Chrono_DIR)
+	list(APPEND CMAKE_MODULE_PATH "${Chrono_DIR}")
 endif()
 
-# Ensure we have a compatible Chrono version
-if(Chrono_VERSION VERSION_LESS "9.0.0")
-	message(WARNING "HydroChrono has been tested with Chrono ≥ 9.0.0. Found version: ${Chrono_VERSION}")
+# Optionally allow the user to set Irrlicht_ROOT externally (e.g., via build.ps1)
+set(Irrlicht_ROOT "${Irrlicht_ROOT}" CACHE PATH "Path to Irrlicht installation")
+
+# Find Irrlicht (MUST happen before Chrono to define Irrlicht::Irrlicht target)
+if(HYDROCHRONO_ENABLE_IRRLICHT)
+	find_package(Irrlicht REQUIRED MODULE)
+	message(STATUS "Found Irrlicht include dir: ${IRRLICHT_INCLUDE_DIR}")
+endif()
+
+# Now we can find Chrono (which assumes Irrlicht::Irrlicht already exists)
+find_package(Chrono CONFIG REQUIRED)
+
+# Verify required Chrono targets are available
+if(NOT TARGET Chrono::Chrono_core)
+	message(FATAL_ERROR "Chrono::Chrono_core target not found. Ensure Chrono was built with modern CMake target exports.")
+endif()
+
+# Enable Irrlicht support if requested and available
+if(HYDROCHRONO_ENABLE_IRRLICHT)
+	if(TARGET Chrono::Chrono_irrlicht)
+		add_compile_definitions("HYDROCHRONO_HAVE_IRRLICHT=1")
+	else()
+		message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
+	endif()
+endif()
+
+# Ensure we have a compatible Chrono version (check after find_package)
+if(Chrono_VERSION VERSION_LESS "9.0.1")
+	message(WARNING "HydroChrono now requires Chrono ≥ 9.0.1 for modular target support. Found version: ${Chrono_VERSION}")
 endif()
 
 # ── HDF5 Integration ──
@@ -122,30 +146,35 @@ set(HYDROCHRONO_TEST_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests CACHE PA
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Helper function to configure common HydroChrono target properties
-function(configure_hydro_target tgt sources)
-	add_library(${tgt} ${sources})
-	
+# Now uses modern Chrono imported targets (Chrono ≥ v9.1.0)
+function(configure_hydro_target tgt)
 	target_compile_features(${tgt} PUBLIC cxx_std_17)
 	
 	target_include_directories(${tgt}
 		PUBLIC
 			$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
 			$<INSTALL_INTERFACE:include>
-			${CHRONO_INCLUDE_DIRS}
-		PRIVATE
-			${CMAKE_CURRENT_SOURCE_DIR}/
-			${CMAKE_CURRENT_SOURCE_DIR}/include
 	)
-	
-	# Inherit Chrono's compiler flags for ABI compatibility
-	target_compile_options(${tgt} BEFORE PUBLIC ${CHRONO_CXX_FLAGS})
-	target_link_options(${tgt} BEFORE PUBLIC ${CHRONO_LINKER_FLAGS})
 	
 	# Enable position-independent code for static library linking
 	set_target_properties(${tgt} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 	
-	# Link to Chrono libraries for public API compatibility
-	target_link_libraries(${tgt} PUBLIC ${CHRONO_LIBRARIES})
+	# Link to modern Chrono imported targets - these automatically propagate
+	# include paths, compile flags, and link dependencies
+	target_link_libraries(${tgt}
+		PUBLIC
+			Chrono::Chrono_core
+			# Conditionally link Irrlicht component if enabled
+			$<$<BOOL:${HYDROCHRONO_ENABLE_IRRLICHT}>:Chrono::Chrono_irrlicht>
+	)
+endfunction()
+
+# Helper function to configure test environment (Windows DLL paths, etc.)
+function(configure_test_environment)
+	# Set up DLL search paths for Windows testing
+	set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
+	set(IRRLICHT_DLL_DIR "C:/libs/irrlicht-1.8.4/bin/Win64-VisualStudio")
+	set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
 endfunction()
 
 # ── Main HydroChrono Library ──
@@ -158,7 +187,9 @@ set(HYDROCHRONO_SOURCES
 	src/logging.cpp
 )
 
-configure_hydro_target(HydroChrono "${HYDROCHRONO_SOURCES}")
+# Create the library target and configure it
+add_library(HydroChrono ${HYDROCHRONO_SOURCES})
+configure_hydro_target(HydroChrono)
 
 # Add HDF5 as private dependency (don't expose to users)
 target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIRS})
@@ -167,20 +198,40 @@ target_link_libraries(HydroChrono PRIVATE ${HDF5_LIBRARIES})
 # Library-specific compile definitions
 target_compile_definitions(HydroChrono
 	PUBLIC
-		CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\"
-		HYDROCHRONO_VERSION=\"${PROJECT_VERSION}\"
-		HYDROCHRONO_BUILD_TYPE=\"$<IF:$<CONFIG:Debug>,Debug,$<IF:$<CONFIG:Release>,Release,$<IF:$<CONFIG:RelWithDebInfo>,RelWithDebInfo,$<IF:$<CONFIG:MinSizeRel>,MinSizeRel,Unknown>>>>\"
+		"CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\""
+		"HYDROCHRONO_VERSION=\"${PROJECT_VERSION}\""
+		"HYDROCHRONO_BUILD_TYPE=\"$<IF:$<CONFIG:Debug>,Debug,$<IF:$<CONFIG:Release>,Release,$<IF:$<CONFIG:RelWithDebInfo>,RelWithDebInfo,$<IF:$<CONFIG:MinSizeRel>,MinSizeRel,Unknown>>>>\""
 	PRIVATE 
-		$<$<BOOL:${HYDROCHRONO_ENABLE_LOGGING}>:HYDROCHRONO_ENABLE_LOGGING=1>
+		$<$<BOOL:${HYDROCHRONO_ENABLE_LOGGING}>:"HYDROCHRONO_ENABLE_LOGGING=1">
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ─── 6. Auxiliary Targets (GUI, Tests, Demos) ─────────────────────────────────
-# ═══════════════════════════════════════════════════────────════────────────════
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Main YAML-Driven CLI App ──
+add_executable(run_hydrochrono
+    app/run_hydrochrono.cpp
+    src/hydrochrono_runner/RunHydroChronoFromYAML.cpp
+)
+
+target_link_libraries(run_hydrochrono
+    PRIVATE HydroChrono HydroChronoGUI Chrono::Chrono_parsers
+)
+
+target_include_directories(run_hydrochrono
+    PRIVATE ${PROJECT_SOURCE_DIR}/include
+)
+
+set_target_properties(run_hydrochrono PROPERTIES
+    OUTPUT_NAME "run_hydrochrono"
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/bin
+)
 
 # ── GUI Helper Library ──
 # Separate library for Irrlicht visualization helpers
-configure_hydro_target(HydroChronoGUI "src/gui/guihelper.cpp")
+add_library(HydroChronoGUI src/gui/guihelper.cpp)
+configure_hydro_target(HydroChronoGUI)
 
 # ── Demo Executables ──
 if(HYDROCHRONO_ENABLE_DEMOS)
@@ -199,10 +250,8 @@ if(HYDROCHRONO_ENABLE_TESTS)
 	include(CTest)
 	enable_testing()
 	
-	# Set up DLL search paths for Windows testing
-	set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
-	set(IRRLICHT_DLL_DIR "C:/libs/irrlicht-1.8.4/bin/Win64-VisualStudio")
-	set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}")
+	# Configure test environment with DLL paths
+	configure_test_environment()
 
 	add_subdirectory(tests)
 	add_subdirectory(tests/regression)

@@ -46,6 +46,7 @@ endif()
 option(HYDROCHRONO_ENABLE_TESTS "Enable tests" ON)
 option(HYDROCHRONO_ENABLE_IRRLICHT "Enable irrlicht visualization library" ON)
 option(HYDROCHRONO_ENABLE_DEMOS "Enable demo executables" ON)
+option(HYDROCHRONO_ENABLE_YAML_RUNNER "Enable YAML-based CLI runner" ON)
 option(HYDROCHRONO_ENABLE_USER_DOC "User's documentation" OFF)
 option(HYDROCHRONO_ENABLE_PROG_DOC "Programmer's documentation" OFF)
 option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
@@ -210,23 +211,28 @@ target_compile_definitions(HydroChrono
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Main YAML-Driven CLI App ──
-add_executable(run_hydrochrono
-    app/run_hydrochrono.cpp
-    src/hydrochrono_runner/RunHydroChronoFromYAML.cpp
-)
+message(STATUS "HYDROCHRONO_ENABLE_YAML_RUNNER: ${HYDROCHRONO_ENABLE_YAML_RUNNER}")
+if(HYDROCHRONO_ENABLE_YAML_RUNNER)
+    add_executable(run_hydrochrono
+        app/run_hydrochrono.cpp
+        src/hydrochrono_runner/run_hydrochrono_from_yaml.cpp
+    )
 
-target_link_libraries(run_hydrochrono
-    PRIVATE HydroChrono HydroChronoGUI Chrono::Chrono_parsers
-)
+    target_link_libraries(run_hydrochrono
+        PRIVATE HydroChrono HydroChronoGUI Chrono::Chrono_parsers
+    )
 
-target_include_directories(run_hydrochrono
-    PRIVATE ${PROJECT_SOURCE_DIR}/include
-)
+    target_include_directories(run_hydrochrono
+        PRIVATE ${PROJECT_SOURCE_DIR}/include
+    )
 
-set_target_properties(run_hydrochrono PROPERTIES
-    OUTPUT_NAME "run_hydrochrono"
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/bin
-)
+    set_target_properties(run_hydrochrono PROPERTIES
+        OUTPUT_NAME "run_hydrochrono"
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/bin
+    )
+else()
+    message(STATUS "YAML runner disabled - not creating run_hydrochrono target")
+endif()
 
 # ── GUI Helper Library ──
 # Separate library for Irrlicht visualization helpers

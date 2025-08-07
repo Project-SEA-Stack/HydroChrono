@@ -1,0 +1,13 @@
+﻿{
+    "ChronoDir": "<path-to-chrono-cmake-config>",
+    "Hdf5Dir": "<path-to-hdf5-cmake-config>",
+    "EigenDir": "<path-to-eigen3-include>",
+    "IrrlichtDir": "<path-to-irrlicht-installation>",
+    "PythonRoot": "<path-to-python-installation>",
+    "ScriptVersion": "2.1",
+    "DefaultBuildType": "Release",
+    "DefaultYamlRunner": "ON",
+    "VisualStudioPath": "<path-to-visual-studio-msvc>",
+    "RuntimeLibrary": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+    "CMakeModulePath": "<path-to-chrono-cmake-modules>"
+} 

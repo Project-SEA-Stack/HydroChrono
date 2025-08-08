@@ -6,6 +6,7 @@
 #include <Eigen/Dense>  // Need for the container function
 #include <fstream>
 #include <iostream>
+#include <hydroc/logging.h>
 #include <string>
 
 #ifndef M_PI
@@ -52,7 +53,7 @@ void WriteDataToFile(const std::vector<T>& data, const std::string& filename) {
         }
         outFile.close();
     } else {
-        std::cerr << "Unable to open the file for writing: " << filename << std::endl;
+        hydroc::cli::LogError(std::string("Unable to open the file for writing: ") + filename);
     }
 };
 
@@ -79,7 +80,7 @@ void inline WriteContainerToFile<std::vector<double>>(const std::vector<double>&
     std::ofstream output_file(file_name);
 
     if (!output_file) {
-        std::cerr << "Error: Unable to open the file: " << file_name << std::endl;
+        hydroc::cli::LogError(std::string("Error: Unable to open the file: ") + file_name);
         return;
     }
 
@@ -101,7 +102,7 @@ void inline WriteContainerToFile<Eigen::VectorXd>(const Eigen::VectorXd& contain
     std::ofstream output_file(file_name);
 
     if (!output_file) {
-        std::cerr << "Error: Unable to open the file: " << file_name << std::endl;
+        hydroc::cli::LogError(std::string("Error: Unable to open the file: ") + file_name);
         return;
     }
 

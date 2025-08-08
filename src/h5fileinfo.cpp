@@ -8,6 +8,7 @@
 #include <H5Cpp.h>
 #include <hydroc/h5fileinfo.h>
 #include <filesystem>  // std::filesystem::absolute
+#include <hydroc/logging.h>
 
 using namespace chrono;  // TODO narrow this using namespace to specify what we use from chrono or put chrono:: in front
                          // of it all?
@@ -15,11 +16,11 @@ using namespace chrono;  // TODO narrow this using namespace to specify what we 
 H5FileInfo::H5FileInfo(std::string file, int num_bod) {
     h5_file_name_ = file;
     num_bodies_   = num_bod;
-    std::cout << "searching for file: " << file << std::endl;
+    hydroc::debug::LogDebug(std::string("Searching for file: ") + file);
     if (std::filesystem::exists(file)) {
-        std::cout << "found file at: " << std::filesystem::absolute(file) << std::endl;
+        hydroc::debug::LogDebug(std::string("Found file at: ") + std::filesystem::absolute(file).string());
     } else {
-        std::cout << "h5 file does not exist, absolute file location: " << std::filesystem::absolute(file) << std::endl;
+        hydroc::cli::LogWarning(std::string("H5 file does not exist, absolute file location: ") + std::filesystem::absolute(file).string());
     }
 }
 
@@ -91,6 +92,76 @@ HydroData H5FileInfo::ReadH5Data() {
     userH5File.close();
     // WriteDataToFile(excitation_irf_dims, "excitation_irf_dims.txt");
     // WriteDataToFile(excitation_irf_matrix, "excitation_irf_matrix.txt");
+    
+    // Diagnostic summary of parsed HDF5 hydrodynamic data (flat section)
+    hydroc::cli::ShowEmptyLine();
+    {
+        hydroc::cli::ShowHeader("🌊 Hydrodynamic Data Summary");
+    }
+    
+    // Extract file name from full path for cleaner display
+    std::string file_name = h5_file_name_;
+    size_t last_slash = file_name.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        file_name = file_name.substr(last_slash + 1);
+    }
+    
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "HDF5 File", file_name));
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Bodies", std::to_string(num_bodies_)));
+    
+    // Get DoFs per body (use first body as reference)
+    int dofs_per_body = 0;
+    if (num_bodies_ > 0) {
+        if (data_to_init.body_data_[0].rirf_matrix.size() > 0) {
+            dofs_per_body = data_to_init.body_data_[0].rirf_matrix.dimension(0);
+        } else if (data_to_init.body_data_[0].inf_added_mass.rows() > 0) {
+            dofs_per_body = data_to_init.body_data_[0].inf_added_mass.rows();
+        }
+    }
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "DoFs per Body", std::to_string(dofs_per_body)));
+    
+    // Get frequency count (use first body as reference)
+    int freq_count = 0;
+    if (num_bodies_ > 0 && data_to_init.reg_wave_data_[0].freq_list.size() > 0) {
+        freq_count = data_to_init.reg_wave_data_[0].freq_list.size();
+    }
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Frequency Count", std::to_string(freq_count)));
+    
+    // Check data availability across all bodies
+    bool has_irf = true;
+    bool has_excitation = true;
+    bool has_radiation_damping = true;
+    bool has_added_mass = true;
+    
+    for (int i = 0; i < num_bodies_; i++) {
+        // Check IRF (radiation impulse response function)
+        if (data_to_init.body_data_[i].rirf_matrix.size() == 0) {
+            has_irf = false;
+        }
+        
+        // Check excitation forces
+        if (data_to_init.reg_wave_data_[i].excitation_mag_matrix.size() == 0) {
+            has_excitation = false;
+        }
+        
+        // Check radiation damping (same as IRF for this implementation)
+        if (data_to_init.body_data_[i].rirf_matrix.size() == 0) {
+            has_radiation_damping = false;
+        }
+        
+        // Check added mass at infinity
+        if (data_to_init.body_data_[i].inf_added_mass.rows() == 0 || 
+            data_to_init.body_data_[i].inf_added_mass.cols() == 0) {
+            has_added_mass = false;
+        }
+    }
+    
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "IRF Included", std::string(has_irf ? "Yes" : "No")));
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Excitation Forces", std::string(has_excitation ? "Yes" : "No")));
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Radiation Damping", std::string(has_radiation_damping ? "Yes" : "No")));
+    hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Added Mass", std::string(has_added_mass ? "Yes" : "No")));
+    hydroc::cli::ShowEmptyLine();
+    
     return data_to_init;
 }
 

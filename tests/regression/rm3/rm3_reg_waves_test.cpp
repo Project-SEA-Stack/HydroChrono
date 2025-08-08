@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
     SetChronoDataPath(CHRONO_DATA_DIR);
 
     // Initialize logging with command line arguments
-    hydroc::Logger::init_logging(argc, argv);
+    // Optional: initialize logging here if test needs debug logs
 
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;

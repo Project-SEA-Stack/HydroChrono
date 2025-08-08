@@ -1,4 +1,5 @@
 #include <hydroc/gui/guihelper.h>
+#include <hydroc/logging.h>
 using namespace hydroc::gui;
 
 #include <chrono/physics/ChSystem.h>
@@ -88,21 +89,121 @@ void GUIImpl::InitReceiver(bool& theSimulationStarted) {
 }
 
 void GUIImpl::Init(UI& ui, chrono::ChSystem* system, const char* title) {
-    pVis->AttachSystem(system);
+    // ========== TEMPORARY DIAGNOSTIC CODE FOR GUI CRASH DEBUGGING ==========
+    // TODO: Remove this diagnostic block once GUI crash is resolved
+    
+    try {
+        hydroc::debug::LogDebug("🔍 GUIImpl::Init - Attaching system to visualization...");
+        pVis->AttachSystem(system);
+        hydroc::debug::LogDebug("✅ System attached successfully");
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during AttachSystem: ") + e.what());
+        throw;  // Re-throw to be caught by outer guard
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during AttachSystem");
+        throw;  // Re-throw to be caught by outer guard
+    }
 
-    pVis->SetWindowSize(1280, 720);
-    pVis->SetWindowTitle(title);
-    pVis->SetCameraVertical(chrono::CameraVerticalDir::Z);
-    pVis->Initialize();
+    try {
+        hydroc::debug::LogDebug("🔍 GUIImpl::Init - Setting window properties...");
+        pVis->SetWindowSize(1280, 720);
+        pVis->SetWindowTitle(title);
+        pVis->SetCameraVertical(chrono::CameraVerticalDir::Z);
+        hydroc::debug::LogDebug("✅ Window properties set successfully");
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during window setup: ") + e.what());
+        throw;  // Re-throw to be caught by outer guard
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during window setup");
+        throw;  // Re-throw to be caught by outer guard
+    }
+    
+    try {
+        hydroc::debug::LogDebug("🔍 GUIImpl::Init - Initializing visualization system...");
+        pVis->Initialize();
+        hydroc::debug::LogDebug("✅ Visualization system initialized successfully");
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during Initialize: ") + e.what());
+        throw;  // Re-throw to be caught by outer guard
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during Initialize");
+        throw;  // Re-throw to be caught by outer guard
+    }
 
-    InitReceiver(ui.simulationStarted);
-    receiver->Init(pVis.get());
-    pVis->AddUserEventReceiver(receiver.get());
+    try {
+        hydroc::debug::LogDebug("🔍 GUIImpl::Init - Setting up event receiver...");
+        InitReceiver(ui.simulationStarted);
+        receiver->Init(pVis.get());
+        pVis->AddUserEventReceiver(receiver.get());
+        hydroc::debug::LogDebug("✅ Event receiver set up successfully");
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during receiver setup: ") + e.what());
+        // Don't re-throw here, receiver is optional
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during receiver setup");
+        // Don't re-throw here, receiver is optional  
+    }
 
-    pVis->AddLogo();
-    pVis->AddSkyBox();
-    pVis->AddCamera(chrono::ChVector3d(8, -25, 15), chrono::ChVector3d(0, 0, 0));
-    pVis->AddTypicalLights();
+    // ========== GUARDED VISUAL ASSET CREATION ==========
+    // TODO: Remove guards once GUI crash is resolved
+    
+    // Guard visual asset creation - can be easily toggled off for debugging
+    bool enable_visual_assets = true;  // TODO: Make this configurable
+    
+    if (enable_visual_assets) {
+        try {
+            hydroc::debug::LogDebug("🔍 GUIImpl::Init - Adding logo...");
+            pVis->AddLogo();
+            hydroc::debug::LogDebug("✅ Logo added successfully");
+        } catch (const std::exception& e) {
+            hydroc::cli::LogError(std::string("🔥 Exception during AddLogo: ") + e.what());
+            hydroc::cli::LogWarning("⚠️ Continuing without logo");
+        } catch (...) {
+            hydroc::cli::LogError("🔥 Unknown exception during AddLogo");
+            hydroc::cli::LogWarning("⚠️ Continuing without logo");
+        }
+        
+        try {
+            hydroc::debug::LogDebug("🔍 GUIImpl::Init - Adding skybox...");
+            pVis->AddSkyBox();
+            hydroc::debug::LogDebug("✅ Skybox added successfully");
+        } catch (const std::exception& e) {
+            hydroc::cli::LogError(std::string("🔥 Exception during AddSkyBox: ") + e.what());
+            hydroc::cli::LogWarning("⚠️ Continuing without skybox");
+        } catch (...) {
+            hydroc::cli::LogError("🔥 Unknown exception during AddSkyBox");
+            hydroc::cli::LogWarning("⚠️ Continuing without skybox");
+        }
+        
+        try {
+            hydroc::debug::LogDebug("🔍 GUIImpl::Init - Adding camera...");
+            pVis->AddCamera(chrono::ChVector3d(8, -25, 15), chrono::ChVector3d(0, 0, 0));
+            hydroc::debug::LogDebug("✅ Camera added successfully");
+        } catch (const std::exception& e) {
+            hydroc::cli::LogError(std::string("🔥 Exception during AddCamera: ") + e.what());
+            hydroc::cli::LogWarning("⚠️ Continuing without camera");
+        } catch (...) {
+            hydroc::cli::LogError("🔥 Unknown exception during AddCamera");
+            hydroc::cli::LogWarning("⚠️ Continuing without camera");
+        }
+        
+        try {
+            hydroc::debug::LogDebug("🔍 GUIImpl::Init - Adding lights...");
+            pVis->AddTypicalLights();
+            hydroc::debug::LogDebug("✅ Lights added successfully");
+        } catch (const std::exception& e) {
+            hydroc::cli::LogError(std::string("🔥 Exception during AddTypicalLights: ") + e.what());
+            hydroc::cli::LogWarning("⚠️ Continuing without lights");
+        } catch (...) {
+            hydroc::cli::LogError("🔥 Unknown exception during AddTypicalLights");
+            hydroc::cli::LogWarning("⚠️ Continuing without lights");
+        }
+    } else {
+        hydroc::cli::LogWarning("⚠️ Visual assets disabled for debugging");
+    }
+    
+    hydroc::debug::LogDebug("✅ GUIImpl::Init completed");
+    // ========== END TEMPORARY DIAGNOSTIC CODE ==========
 }
 
 void GUIImpl::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {
@@ -110,18 +211,72 @@ void GUIImpl::SetCamera(double x, double y, double z, double dirx, double diry, 
 }
 
 bool GUIImpl::IsRunning(double timestep) {
-    if (pVis->Run() == false) return false;
+    // ========== TEMPORARY DIAGNOSTIC CODE FOR GUI CRASH DEBUGGING ==========
+    // TODO: Remove this diagnostic block once GUI crash is resolved
+    
+    try {
+        if (pVis->Run() == false) return false;
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during pVis->Run(): ") + e.what());
+        return false;  // Stop the simulation loop
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during pVis->Run()");
+        return false;  // Stop the simulation loop
+    }
 
-    pVis->BeginScene();
-    pVis->Render();
+    try {
+        pVis->BeginScene();
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during BeginScene: ") + e.what());
+        return false;  // Stop the simulation loop
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during BeginScene");
+        return false;  // Stop the simulation loop
+    }
+    
+    try {
+        pVis->Render();
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during Render: ") + e.what());
+        // Try to end scene gracefully and return false
+        try { pVis->EndScene(); } catch (...) {}
+        return false;  // Stop the simulation loop
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during Render");
+        // Try to end scene gracefully and return false
+        try { pVis->EndScene(); } catch (...) {}
+        return false;  // Stop the simulation loop
+    }
 
-    // Add grid to materialize horizontal plane
-    tools::drawGrid(pVis.get(), 1, 1, 30, 30,
-                    chrono::ChCoordsys<>(chrono::ChVector3d(0, 0.0, 0), chrono::QuatFromAngleZ(chrono::CH_PI_2)),
-                    chrono::ChColor(.1f, .1f, .1f), true);
+    // Guard grid drawing - optional visual element that can be disabled
+    bool enable_grid = true;  // TODO: Make this configurable
+    if (enable_grid) {
+        try {
+            // Add grid to materialize horizontal plane
+            tools::drawGrid(pVis.get(), 1, 1, 30, 30,
+                            chrono::ChCoordsys<>(chrono::ChVector3d(0, 0.0, 0), chrono::QuatFromAngleZ(chrono::CH_PI_2)),
+                            chrono::ChColor(.1f, .1f, .1f), true);
+        } catch (const std::exception& e) {
+            hydroc::cli::LogError(std::string("🔥 Exception during drawGrid: ") + e.what());
+            hydroc::cli::LogWarning("⚠️ Continuing without grid");
+        } catch (...) {
+            hydroc::cli::LogError("🔥 Unknown exception during drawGrid");
+            hydroc::cli::LogWarning("⚠️ Continuing without grid");
+        }
+    }
 
-    pVis->EndScene();
+    try {
+        pVis->EndScene();
+    } catch (const std::exception& e) {
+        hydroc::cli::LogError(std::string("🔥 Exception during EndScene: ") + e.what());
+        return false;  // Stop the simulation loop
+    } catch (...) {
+        hydroc::cli::LogError("🔥 Unknown exception during EndScene");
+        return false;  // Stop the simulation loop
+    }
+    
     return true;
+    // ========== END TEMPORARY DIAGNOSTIC CODE ==========
 }
 
 hydroc::gui::GUIImpl::MyActionReceiver::MyActionReceiver(bool& buttonPressed) : pressed(buttonPressed) {}
@@ -162,7 +317,7 @@ bool hydroc::gui::GUIImpl::MyActionReceiver::OnEvent(const irr::SEvent& event) {
 GUIImpl::GUIImpl() {}
 
 void GUIImpl::Init(UI& ui, chrono::ChSystem* system, const char* title) {
-    std::cout << "Warning: GUI deactivated. Compilation without Irrlicht library" << std::endl;
+    hydroc::cli::LogWarning("Warning: GUI deactivated. Compilation without Irrlicht library");
 }
 
 void GUIImpl::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {}

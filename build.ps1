@@ -541,6 +541,12 @@ function Show-SuccessSummary {
     
     Write-Host ""
     Write-Host "[OK] HydroChrono ready for simulation" -ForegroundColor Magenta
+
+    # Suggested next steps
+    Write-Host "" 
+    Write-Host "Next steps:" -ForegroundColor Cyan
+    Write-Host "  Run regression tests:" -ForegroundColor White
+    Write-Host "    ctest -C $BuildType -L regression" -ForegroundColor Gray
 }
 
 # =============================================================================

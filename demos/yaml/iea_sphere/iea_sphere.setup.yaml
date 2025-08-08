@@ -1,0 +1,9 @@
+# HydroChrono Setup File
+# Centralized configuration for IEA sphere heave simulation
+
+model_file: iea_sphere.model.yaml
+simulation_file: iea_sphere.simulation.yaml
+
+# Future features (not yet implemented)
+hydro_file: iea_sphere.hydro.yaml             # Placeholder for hydrodynamic coefficients
+output_directory: results/iea_sphere          # Output directory for storing results

@@ -1,0 +1,66 @@
+chrono-version: 9.0
+
+model:
+  name: f3of_model
+  angle_degrees: false
+  
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1  # Base
+      location: [0.0, 0.0, -9.0]  # Origin of global frame
+      mass: 1089825
+      fixed: false
+      inertia:
+        moments: [1089825, 1089825, 1089825]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: f3of_geometry/base.obj
+
+    - name: body2  # Front Flap
+      location: [-12.5, 0.0, -5.5]  # Center of Gravity in global frame
+      mass: 179250.0
+      fixed: false
+      inertia:
+        moments: [100000000.0, 1300000.0, 100000000.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: f3of_geometry/flap.obj
+
+    - name: body3  # Rear Flap
+      location: [12.5, 0.0, -5.5]  # Center of Gravity in global frame
+      mass: 179250.0
+      fixed: false
+      inertia:
+        moments: [100000000.0, 1300000.0, 100000000.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: f3of_geometry/flap.obj
+
+  joints:
+    - name: front_flap_joint
+      type: REVOLUTE
+      body1: body1
+      body2: body2
+      location: [-12.5, 0.0, -9.0]
+      axis: [0.0, 1.0, 0.0]
+
+    - name: rear_flap_joint
+      type: REVOLUTE
+      body1: body1
+      body2: body3
+      location: [12.5, 0.0, -9.0]
+      axis: [0.0, 1.0, 0.0]

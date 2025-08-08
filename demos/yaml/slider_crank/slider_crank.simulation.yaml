@@ -1,14 +1,21 @@
-# Basic MBS simulation
+chrono-version: 9.0
 
-contact_method: SMC
-
-time_step: 1e-4
-end_time: 10
-enforce_realtime: true
-
-integrator_type: Euler_implicit_linearized
-solver_type: Barzilai_Borwein
-
-render: true
-render_fps: 120
-camera_vertical: Z
+simulation:
+  contact_method: SMC
+  
+  time_step: 1e-4
+  end_time: 10
+  enforce_realtime: true
+  
+  integrator:
+    type: EULER_IMPLICIT_LINEARIZED
+  
+  solver:
+    type: BARZILAI_BORWEIN
+  
+  visualization:
+    type: MODEL_FILE
+    render_fps: 120
+    enable_shadows: true
+    camera:
+      vertical: Z

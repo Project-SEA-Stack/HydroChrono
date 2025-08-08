@@ -1,0 +1,8 @@
+# RM3 WEC Model Configuration
+# Default model: Linear PTO (simple damper)
+# Alternative: Use --model_file rm3_nonlinearPTO.model.yaml for nonlinear PTO
+
+model_file: rm3_linearPTO.model.yaml
+simulation_file: rm3.simulation.yaml
+hydro_file: rm3.hydro.yaml
+output_directory: results/rm3_linearPTO_decay

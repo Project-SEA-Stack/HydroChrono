@@ -1,0 +1,4 @@
+model_file: f3of.model.yaml
+simulation_file: f3of.simulation.yaml
+hydro_file: f3of.hydro.yaml
+output_directory: results/f3of_decay 

@@ -1,0 +1,7 @@
+# HydroChrono Setup Configuration
+# This file defines the paths to model, simulation, and other configuration files
+
+model_file: slider_crank.model.yaml
+simulation_file: slider_crank.simulation.yaml
+hydro_file: slider_crank.hydro.yaml
+output_directory: results/slider_crank 

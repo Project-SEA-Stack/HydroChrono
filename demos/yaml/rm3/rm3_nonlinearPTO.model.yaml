@@ -1,0 +1,84 @@
+chrono-version: 9.0
+
+model:
+  name: rm3_nonlinearPTO_model
+  angle_degrees: false
+  
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: float
+      location: [0.0, 0.0, -0.72]  # Center of Gravity in global frame
+      mass: 725834
+      fixed: false
+      inertia:
+        moments: [20907301.0, 21306090.66, 37085481.11]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        shapes:
+          - type: MESH
+            filename: geometry/float_cog.obj
+            location: [0, 0, 0]
+            orientation: [0, 0, 0]
+
+    - name: plate
+      location: [0.0, 0.0, -21.29]  # Center of Gravity in global frame
+      mass: 886691
+      fixed: false
+      inertia:
+        moments: [94419614.57, 94407091.24, 28542224.82]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        shapes:
+          - type: MESH
+            filename: geometry/plate_cog.obj
+            location: [0, 0, 0]
+            orientation: [0, 0, 0]
+
+  joints:
+    - name: float_plate_joint
+      type: PRISMATIC
+      body1: float
+      body2: plate
+      location: [0, 0, -0.72]
+      axis: [0, 0, 1]  # Motion along Z axis
+
+  tsdas:
+    - name: PTO
+      type: TSDA
+      body1: float
+      body2: plate
+      point1: [0, 0, -0.72]
+      point2: [0, 0, -21.29]
+      free_length: 20.0
+      minimum_length: 18.0
+      maximum_length: 22.0
+      # Nonlinear spring curve
+      spring_curve_data:
+        - [-2.0, -40000]
+        - [-1.0, -15000]
+        - [0.0, 0]
+        - [1.0, 15000]
+        - [2.0, 40000]
+      # Nonlinear damping curve
+      damping_curve_data:
+        - [-3.0, 30000]
+        - [-1.5, 20000]
+        - [-0.5, 5000]
+        - [0.0, 0]
+        - [0.5, -5000]
+        - [1.5, -20000]
+        - [3.0, -30000]
+      visualization:
+        type: SPRING
+        radius: 0.3
+        resolution: 20
+        turns: 10 

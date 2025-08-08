@@ -1,0 +1,4 @@
+model_file: oswec.model.yaml
+simulation_file: oswec.simulation.yaml
+hydro_file: oswec.hydro.yaml
+output_directory: results/oswec_decay

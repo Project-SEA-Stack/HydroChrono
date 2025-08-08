@@ -1,0 +1,14 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hydroData/oswec.h5
+
+    - name: body2
+      h5_file: hydroData/oswec.h5
+
+  waves:
+    type: regular
+    height: 2.5
+    period: 8.0
+    direction: 0.0  # degrees, 0 = positive x
+    phase: 0.0 

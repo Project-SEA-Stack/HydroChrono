@@ -23,6 +23,54 @@ project(HydroChrono
 	LANGUAGES CXX
 )
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ─── 2.1. Parse Project Metadata ──────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Read and parse project.meta file
+file(READ "${CMAKE_SOURCE_DIR}/project.meta" PROJECT_META_CONTENT)
+string(REPLACE "\n" ";" PROJECT_META_LINES "${PROJECT_META_CONTENT}")
+
+# Parse each line and extract key-value pairs
+foreach(line ${PROJECT_META_LINES})
+    if(line MATCHES "^([^=]+)=([^=]+)$")
+        string(STRIP "${CMAKE_MATCH_1}" key)
+        string(STRIP "${CMAKE_MATCH_2}" value)
+        if(key STREQUAL "name")
+            set(HYDROCHRONO_NAME "${value}")
+        elseif(key STREQUAL "version")
+            set(HYDROCHRONO_VERSION "${value}")
+        elseif(key STREQUAL "description")
+            set(HYDROCHRONO_DESCRIPTION "${value}")
+        elseif(key STREQUAL "author")
+            set(HYDROCHRONO_AUTHOR "${value}")
+        elseif(key STREQUAL "maintainer")
+            set(HYDROCHRONO_MAINTAINER "${value}")
+        elseif(key STREQUAL "url")
+            set(HYDROCHRONO_URL "${value}")
+        elseif(key STREQUAL "license")
+            set(HYDROCHRONO_LICENSE "${value}")
+        elseif(key STREQUAL "status")
+            set(HYDROCHRONO_STATUS "${value}")
+        endif()
+    endif()
+endforeach()
+
+# Display parsed metadata
+message(STATUS "Project: ${HYDROCHRONO_NAME} v${HYDROCHRONO_VERSION}")
+message(STATUS "Description: ${HYDROCHRONO_DESCRIPTION}")
+message(STATUS "Author: ${HYDROCHRONO_AUTHOR}")
+message(STATUS "Maintainer: ${HYDROCHRONO_MAINTAINER}")
+message(STATUS "License: ${HYDROCHRONO_LICENSE}")
+message(STATUS "Status: ${HYDROCHRONO_STATUS}")
+
+# Generate version.h header from template
+configure_file(${CMAKE_SOURCE_DIR}/cmake/version.h.in
+               ${CMAKE_BINARY_DIR}/generated/hydroc/version.h @ONLY)
+
+# Add generated include directory
+include_directories(${CMAKE_BINARY_DIR}/generated)
+
 # Add the cmake folder so the FindSphinx module is found
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
@@ -93,8 +141,14 @@ if(HYDROCHRONO_ENABLE_IRRLICHT)
 endif()
 
 # Ensure we have a compatible Chrono version (check after find_package)
-if(Chrono_VERSION VERSION_LESS "9.0.1")
-	message(WARNING "HydroChrono now requires Chrono ≥ 9.0.1 for modular target support. Found version: ${Chrono_VERSION}")
+if(DEFINED CHRONO_VERSION)
+	if(CHRONO_VERSION VERSION_LESS "9.0.1")
+		message(WARNING "HydroChrono now requires Chrono ≥ 9.0.1 for modular target support. Found version: ${CHRONO_VERSION}")
+	endif()
+else()
+	# If CHRONO_VERSION is not defined, assume it's a compatible version
+	# since the modern targets are available
+	message(STATUS "Chrono version not explicitly set, but modern targets are available - assuming compatible version")
 endif()
 
 # ── HDF5 Integration ──
@@ -132,10 +186,16 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 if(CMAKE_CONFIGURATION_TYPES)
 	foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
 		string(TOUPPER "${cfg}" cfg_uc)
-		set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-		set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
-		set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
+		set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${cfg})
+		set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${cfg})
+		set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${cfg_uc} ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/${cfg})
 	endforeach()
+elseif(CMAKE_BUILD_TYPE)
+	# Single-config generator with explicit build type
+	string(TOUPPER "${CMAKE_BUILD_TYPE}" build_type_uc)
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${build_type_uc} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE})
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${build_type_uc} ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE})
+	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${build_type_uc} ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE})
 endif()
 
 # Category-specific output folders for organization
@@ -185,7 +245,12 @@ set(HYDROCHRONO_SOURCES
 	src/hydro_forces.cpp
 	src/helper.cpp
 	src/wave_types.cpp
-	src/logging.cpp
+    # src/simulation_logging.cpp  # removed in streamlined logging
+	src/hydro_yaml_parser.cpp
+	src/setup_hydro_from_yaml.cpp
+    # logging consolidated: coordinator + CLI (logging.cpp), backend (logger_backend.cpp)
+    src/utils/logger_backend.cpp
+    src/utils/logging.cpp
 )
 
 # Create the library target and configure it
@@ -216,6 +281,8 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
     add_executable(run_hydrochrono
         app/run_hydrochrono.cpp
         src/hydrochrono_runner/run_hydrochrono_from_yaml.cpp
+        src/utils/misc_options.cpp
+        src/utils/setup_parser.cpp
     )
 
     target_link_libraries(run_hydrochrono
@@ -228,7 +295,7 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
 
     set_target_properties(run_hydrochrono PROPERTIES
         OUTPUT_NAME "run_hydrochrono"
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/bin
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     )
 else()
     message(STATUS "YAML runner disabled - not creating run_hydrochrono target")
@@ -241,7 +308,7 @@ configure_hydro_target(HydroChronoGUI)
 
 # ── Demo Executables ──
 if(HYDROCHRONO_ENABLE_DEMOS)
-	add_subdirectory(demos)
+    add_subdirectory(demos)
 endif()
 
 # ── Test Suite ──

@@ -5,7 +5,7 @@
 
 #include <hydroc/hydrochrono_runner/run_hydrochrono_from_yaml.h>
 #include <hydroc/version.h>
-#include "../src/utils/easter_eggs.h"
+#include "../src/utils/misc_options.h"
 #include <hydroc/logging.h>
 #include <string>
 #include <filesystem>
@@ -136,8 +136,8 @@ int main(int argc, char* argv[]) {
     std::ios_base::sync_with_stdio(false);
 #endif
 
-    // Check for Easter eggs first (before any other processing)
-    if (hydroc::eggs::HandleEasterEggs(argc, argv)) {
+    // Check for hidden options first (before any other processing)
+    if (hydroc::misc::HandleHiddenOptions(argc, argv)) {
         return 0;
     }
     

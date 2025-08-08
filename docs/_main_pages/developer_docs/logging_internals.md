@@ -65,3 +65,4 @@ struct LoggingConfig {
   - Confirm single boxed header, 60‑char dividers, aligned colons, warnings block only.
 
 
+

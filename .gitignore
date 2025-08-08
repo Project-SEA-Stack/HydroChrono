@@ -1,7 +1,6 @@
 # IDE Specific
 .vs/
 *.launch
-*.json
 .editorconfig
 
 # Compiled source
@@ -54,3 +53,5 @@ Testing/Temporary/LastTest.log
 # Test results (ignore all results/ directories)
 results/
 **/results/
+*.log
+build-config.json

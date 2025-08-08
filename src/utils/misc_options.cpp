@@ -41,7 +41,7 @@ static std::string LoadBannerAsset() {
 bool HandleHiddenOptions(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--layout") {
+        if (arg == "--salter") {
             std::string art = LoadBannerAsset();
             if (art.empty()) {
                 return false; // Fail silently to avoid suspicion

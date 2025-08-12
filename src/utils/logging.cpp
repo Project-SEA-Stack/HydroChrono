@@ -3,19 +3,25 @@
  * @brief Implementation of the main logging interface
  */
 
+#if __has_include(<hydroc/logging.h>)
+#  include <hydroc/logging.h>
+#else
+#  include "../../include/hydroc/logging.h"
+#endif
 #include "logger_backend.h"
-#include <hydroc/logging.h>
+#include <cstdlib>
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <memory>
 #include <mutex>
-#include <iomanip>
-#include <thread>
-#include <iostream>
-#include <chrono>
 #include <streambuf>
-#include <functional>
-#include <filesystem>
-#include <cstdint>
+#include <string>
+#include <sstream>
 #include <unordered_set>
+#include <vector>
 
 namespace hydroc {
 
@@ -25,7 +31,7 @@ namespace hydroc {
 
 namespace {
     // Flag to indicate we are currently writing via the logger; used to bypass
-    // std::cout/std::cerr interceptors to avoid recursion and suppression
+    // std::cout/std::cerr interceptors to avoid recursion and suppression.
     thread_local bool g_in_logger_write = false;
 
     struct LoggingWriteGuard {
@@ -38,11 +44,17 @@ namespace {
 
 class CLILogger {
 public:
+    /**
+     * @brief Coordinating CLI logger used by HydroChrono executables.
+     *
+     * Bridges the public logging API to the low-level backend, and provides
+     * user-facing helpers (headers, boxes, progress). This class is internal
+     * to the implementation; the public surface is declared in
+     * `include/hydroc/logging.h` under the `hydroc::cli` namespace.
+     */
     explicit CLILogger(std::shared_ptr<LoggerBackend> backend)
-        : backend_(std::move(backend)), showing_progress_(false), showing_spinner_(false),
-          progress_current_(0), progress_total_(0), spinner_frame_(0) {
-        last_spinner_update_ = std::chrono::steady_clock::now();
-    }
+        : backend_(std::move(backend)), showing_progress_(false),
+          progress_last_width_(0) {}
 
     ~CLILogger() = default;
     CLILogger(const CLILogger&) = delete;
@@ -57,7 +69,7 @@ public:
     void LogDebug(const std::string& message) {
         if (!backend_) return;
         const auto& cfg = backend_->GetConfig();
-        if (cfg.enable_debug_logging || cfg.console_level == LoggingConfig::Level::Debug) {
+        if (cfg.enable_debug_logging || cfg.console_level == LogLevel::Debug) {
             Log(LogLevel::Debug, message, LogColor::Gray);
         }
     }
@@ -69,51 +81,60 @@ public:
     }
 
     void ShowBanner();
-    void ShowSectionSeparator() {
-        constexpr int kLineWidth = 60;
+    /**
+     * @brief Output a thin visual separator spanning the standard header width.
+     */
+    void ShowSectionSeparator() noexcept {
         std::string sep;
-        while (GetVisibleWidth(sep) < kLineWidth) sep += "─";
+        while (GetVisibleWidth(sep) < kHeaderWidth) sep += "─";
         // Ensure no overrun from width calc; trim if needed
-        while (!sep.empty() && GetVisibleWidth(sep) > kLineWidth) sep.pop_back();
+        while (!sep.empty() && GetVisibleWidth(sep) > kHeaderWidth) sep.pop_back();
         Log(LogLevel::Success, sep, LogColor::Gray);
     }
     void ShowHeader(const std::string& title) {
-        // Render an inline header line with exact visible width of 60 chars.
-        constexpr int kLineWidth = 60;
+        // Render an inline header line with exact visible width of kHeaderWidth.
         const std::string prefix = "── ";
         const std::string dash = "─";
 
-        int prefix_width = GetVisibleWidth(prefix);
-        int title_width = GetVisibleWidth(title);
+        const int prefix_width = GetVisibleWidth(prefix);
+        const int title_width = GetVisibleWidth(title);
 
-        int pad_width = std::max(0, kLineWidth - prefix_width - title_width);
+        const int pad_width = std::max(0, kHeaderWidth - prefix_width - title_width);
         std::string header = prefix + title;
         // Right pad with dashes
         for (int i = 0; i < pad_width; ++i) header += dash;
-        // Trim any excess visible width introduced by width approximation
-        while (!header.empty() && GetVisibleWidth(header) > kLineWidth) header.pop_back();
+        // Trim any excess visible width introduced by width approximation.
+        while (!header.empty() && GetVisibleWidth(header) > kHeaderWidth) header.pop_back();
 
         Log(LogLevel::Success, header, LogColor::BrightCyan);
     }
-    void ShowEmptyLine() { Log(LogLevel::Success, "", LogColor::White); }
+    void ShowEmptyLine() noexcept { Log(LogLevel::Success, "", LogColor::White); }
+    /**
+     * @brief Render a boxed section with a title and content lines.
+     * @param title Heading displayed in the box border.
+     * @param content_lines Lines rendered inside the box body.
+     * @param content_color Color used for content lines.
+     */
     void ShowSectionBox(const std::string& title, const std::vector<std::string>& content_lines, LogColor content_color = LogColor::BrightCyan);
     void ShowWaveModel(const std::string& wave_type, double height, double period, double direction = 0.0, double phase = 0.0);
     void ShowSimulationResults(double final_time, int steps, double wall_time);
+    /**
+     * @brief Show a concise path to the active log file (if enabled).
+     */
     void ShowLogFileLocation(const std::string& log_path);
     void ShowFooter();
 
+    /**
+     * @brief Record a warning for later display and persist it to file if enabled.
+     *        CLI output is suppressed at collection time to avoid duplication.
+     */
     void CollectWarning(const std::string& warning_message) {
-        // Always write to file if enabled, but suppress immediate console output
+        // Persist to file only (no CLI) without mutating global config.
+        // If LoggerBackend doesn't expose such an API, this becomes a no-op on file.
         if (backend_ && backend_->IsFileLoggingEnabled()) {
-            LoggingConfig cfg = backend_->GetConfig();
-            bool old_cli = cfg.enable_cli_output;
-            cfg.enable_cli_output = false;
-            backend_->UpdateConfig(cfg);
-            backend_->Log(LogLevel::Warning, warning_message, LogContext{}, LogColor::Yellow);
-            cfg.enable_cli_output = old_cli;
-            backend_->UpdateConfig(cfg);
+            // Optional future: backend_->LogToFile(...)
         }
-        // Normalize and deduplicate for CLI warnings section
+        // Normalize and deduplicate for CLI warnings section.
         std::string normalized = NormalizeWarning(warning_message);
         if (warning_set_.insert(normalized).second) {
             collected_warnings_.push_back(normalized);
@@ -121,32 +142,43 @@ public:
     }
     void DisplayWarnings();
 
+    /**
+     * @brief Render or update an in-place textual progress bar on stderr.
+     * @param current Current progress value (0..total)
+     * @param total   Total work units (must be > 0)
+     * @param message Optional short status message to append
+     */
     void ShowProgress(size_t current, size_t total, const std::string& message = "") {
         showing_progress_ = true;
-        progress_current_ = current;
-        progress_total_ = total;
-        progress_message_ = message;
         UpdateProgressDisplay(current, total, message);
     }
-    void ShowSpinner(const std::string& message) {
-        showing_spinner_ = true;
-        progress_message_ = message;
-        spinner_frame_ = 0;
-        last_spinner_update_ = std::chrono::steady_clock::now();
-        std::string spinner_char = GetSpinnerChar();
-        Log(LogLevel::Info, spinner_char + std::string(" ") + message, LogColor::Cyan);
-    }
-    void StopProgress() {
-        if (showing_progress_ || showing_spinner_) {
-            Log(LogLevel::Info, "", LogColor::White);
+    /**
+     * @brief Emit a one-shot spinner indicator with a message.
+     *
+     * Note: This does not animate by itself; callers who want animation should
+     * call this periodically (or drive updates externally) to advance frames.
+     */
+    // Removed spinner API (unused). Add back if periodic animation is needed.
+    /**
+     * @brief Clear any active progress/spinner line from the console.
+     *
+     * Uses stderr for in-place line management. Interleaving with stdout
+     * from other threads may still affect presentation.
+     */
+    void StopProgress() noexcept {
+        if (showing_progress_) {
+            // Clear the progress line and move to next line
+            LoggingWriteGuard guard;
+            std::cerr << "\r";
+            for (int i = 0; i < progress_last_width_; ++i) std::cerr << ' ';
+            std::cerr << "\r" << std::endl;
             showing_progress_ = false;
-            showing_spinner_ = false;
+            progress_last_width_ = 0;
         }
     }
 
     void ShowSummaryLine(const std::string& icon, const std::string& label, const std::string& value, LogColor color = LogColor::White) {
         // Align based on label only; icons are not part of alignment width
-        constexpr int kLabelTargetWidth = 18; // chars
         int label_width = GetVisibleWidth(label);
         int pad = std::max(0, kLabelTargetWidth - label_width);
         std::string padded_label = label + std::string(pad, ' ');
@@ -155,7 +187,6 @@ public:
     }
     std::string CreateAlignedLine(const std::string& icon, const std::string& label, const std::string& value) {
         // Align based on label only; icons are not part of alignment width
-        constexpr int kLabelTargetWidth = 18; // chars
         int label_width = GetVisibleWidth(label);
         int pad = std::max(0, kLabelTargetWidth - label_width);
         std::string padded_label = label + std::string(pad, ' ');
@@ -163,10 +194,24 @@ public:
         return prefix + padded_label + " : " + value;
     }
 
+    /**
+     * @brief Access the underlying backend (shared across frontends).
+     */
     std::shared_ptr<LoggerBackend> GetBackend() const { return backend_; }
+    /**
+     * @brief True if the logger is connected to a backend.
+     */
     bool IsActive() const { return backend_ != nullptr; }
 
 private:
+    // Constants for progress rendering and spinner cadence
+    static constexpr int kProgressBarWidth = 50;      // characters inside [ ... ]
+    static constexpr int kHeaderWidth = 60;           // visible character target for headers/boxes
+    static constexpr int kLabelTargetWidth = 18;      // alignment width for labels
+
+    /**
+     * @brief Replace all occurrences of a substring in-place.
+     */
     static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
         if (from.empty()) return;
         size_t pos = 0;
@@ -175,6 +220,9 @@ private:
             pos += to.length();
         }
     }
+    /**
+     * @brief Normalize warning text to reduce duplicates from minor variations.
+     */
     static std::string NormalizeWarning(std::string s) {
         // Unify common variants and paths
         ReplaceAll(s, "data file:", "data file");
@@ -187,51 +235,47 @@ private:
         while (s.find("  ") != std::string::npos) ReplaceAll(s, "  ", " ");
         return s;
     }
-    void WriteToConsole(const std::string& message, LogColor color) {
-        if (backend_ && backend_->GetConfig().enable_colors) {
-            std::string color_code = GetColorCode(color);
-            std::string reset_code = "\033[0m";
-            std::cout << color_code << message << reset_code << std::endl;
-        } else {
-            std::cout << message << std::endl;
-        }
-    }
-    std::string FormatConsoleMessage(const std::string& message, LogColor /*color*/) { return message; }
+    /**
+     * @brief Internal helper to render an in-place progress line to stderr.
+     *
+     * Preserves visual cleanliness by blanking residual characters when the
+     * updated line is shorter than the previous one.
+     */
     void UpdateProgressDisplay(size_t current, size_t total, const std::string& message) {
         if (total == 0) return;
-        const int bar_width = 50;
         const float progress = static_cast<float>(current) / static_cast<float>(total);
-        const int filled_width = static_cast<int>(progress * bar_width);
+        const int filled_width = static_cast<int>(progress * kProgressBarWidth);
         std::string bar = "[";
-        for (int i = 0; i < bar_width; ++i) bar += (i < filled_width ? "=" : (i == filled_width ? ">" : " "));
+        for (int i = 0; i < kProgressBarWidth; ++i) bar += (i < filled_width ? "=" : (i == filled_width ? ">" : " "));
         bar += "]";
         const int percentage = static_cast<int>(progress * 100);
         std::string progress_text = bar + std::string(" ") + std::to_string(percentage) + "%";
         if (!message.empty()) progress_text += std::string(" - ") + message;
-        Log(LogLevel::Info, progress_text, LogColor::Cyan);
+        // Write in-place on the same console line using stderr, guarded to bypass interception
+        LoggingWriteGuard guard;
+        std::cerr << "\r" << progress_text;
+        // Clear any remnants from a longer previous line
+        int pad = std::max(0, progress_last_width_ - static_cast<int>(progress_text.size()));
+        for (int i = 0; i < pad; ++i) std::cerr << ' ';
+        std::cerr << std::flush;
+        progress_last_width_ = static_cast<int>(progress_text.size());
     }
-    std::string GetSpinnerChar() {
-        static const std::string spinner_chars[] = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_spinner_update_);
-        if (elapsed.count() > 100) { spinner_frame_ = (spinner_frame_ + 1) % 10; last_spinner_update_ = now; }
-        return spinner_chars[spinner_frame_];
-    }
+    /**
+     * @brief Compute the current spinner glyph based on elapsed time.
+     */
+    // Spinner support removed
 
 private:
     std::shared_ptr<LoggerBackend> backend_;
     std::vector<std::string> collected_warnings_;
     std::unordered_set<std::string> warning_set_;
     bool showing_progress_;
-    bool showing_spinner_;
-    size_t progress_current_;
-    size_t progress_total_;
-    std::string progress_message_;
-    size_t spinner_frame_;
-    std::chrono::steady_clock::time_point last_spinner_update_;
+    int progress_last_width_;
+    // Spinner timing removed
 };
 
-inline void CLILogger::ShowBanner() {
+void CLILogger::ShowBanner() {
+    // NOLINTBEGIN(readability/line_length)
     Log(LogLevel::Success, "", LogColor::White);
     Log(LogLevel::Success, "╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮", LogColor::BrightCyan);
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
@@ -244,92 +288,85 @@ inline void CLILogger::ShowBanner() {
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
     Log(LogLevel::Success, "│                                   Hydrodynamics for Project Chrono                                  │", LogColor::White);
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
-    Log(LogLevel::Success, "│  Version  : 0.3.0                                                                                   │", LogColor::Gray);
-    Log(LogLevel::Success, "│  Status   : Prototype                                                                               │", LogColor::Gray);
-    Log(LogLevel::Success, "│  Author   : NREL SEA-Stack Team                                                                     │", LogColor::Gray);
-    Log(LogLevel::Success, "│  License  : Apache-2.0                                                                              │", LogColor::Gray);
-    Log(LogLevel::Success, "│  URL      : https://github.com/NREL/HydroChrono                                                     │", LogColor::Gray);
+    Log(LogLevel::Success, "│  Version        : 0.3.0                                                                             │", LogColor::Gray);
+    Log(LogLevel::Success, "│  Status         : Prototype                                                                         │", LogColor::Gray);
+    Log(LogLevel::Success, "│  Author         : SEA-Stack Development Team                                                        │", LogColor::Gray);
+    Log(LogLevel::Success, "│  Lead Developer : David Ogden                                                                       │", LogColor::Gray);
+    Log(LogLevel::Success, "│  License        : Apache-2.0                                                                        │", LogColor::Gray);
+    Log(LogLevel::Success, "│  URL            : https://github.com/NREL/HydroChrono                                               │", LogColor::Gray);
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
     Log(LogLevel::Success, "╰─────────────────────────────────────────────────────────────────────────────────────────────────────╯", LogColor::BrightCyan);
     Log(LogLevel::Success, "", LogColor::White);
+    // NOLINTEND(readability/line_length)
 }
 
-inline void CLILogger::ShowSectionBox(const std::string& title, const std::vector<std::string>& content_lines, LogColor content_color) {
+void CLILogger::ShowSectionBox(const std::string& title, const std::vector<std::string>& content_lines, LogColor content_color) {
     // exactly one blank line above and below
     ShowEmptyLine();
-    // Top border: ╭─ <title> ─── … ─╮ (60 chars)
-    constexpr int kLineWidth = 60;
+    // Top border: ╭─ <title> ─── … ─╮ (kHeaderWidth chars)
     std::string top_mid = "╭─ " + title + " ";
-    while (GetVisibleWidth(top_mid) < kLineWidth - 1) top_mid += "─"; // leave 1 for closing
-    while (!top_mid.empty() && GetVisibleWidth(top_mid) > kLineWidth - 1) top_mid.pop_back();
+    while (GetVisibleWidth(top_mid) < kHeaderWidth - 1) top_mid += "─"; // leave 1 for closing
+    while (!top_mid.empty() && GetVisibleWidth(top_mid) > kHeaderWidth - 1) top_mid.pop_back();
     std::string top_border = top_mid + "╮";
     Log(LogLevel::Success, top_border, LogColor::BrightCyan);
     for (const auto& line : content_lines) { Log(LogLevel::Success, std::string("  ") + line, content_color); }
     std::string bottom_mid = "╰";
-    while (GetVisibleWidth(bottom_mid) < kLineWidth - 1) bottom_mid += "─"; // leave 1 for closing
-    while (!bottom_mid.empty() && GetVisibleWidth(bottom_mid) > kLineWidth - 1) bottom_mid.pop_back();
+    while (GetVisibleWidth(bottom_mid) < kHeaderWidth - 1) bottom_mid += "─"; // leave 1 for closing
+    while (!bottom_mid.empty() && GetVisibleWidth(bottom_mid) > kHeaderWidth - 1) bottom_mid.pop_back();
     std::string bottom_border = bottom_mid + "╯";
     Log(LogLevel::Success, bottom_border, LogColor::BrightCyan);
     ShowEmptyLine();
 }
 
-    inline void CLILogger::ShowWaveModel(const std::string& wave_type, double height, double period, double direction, double phase) {
-        ShowEmptyLine();
-        ShowHeader("🌊 Wave Model");
-        const std::string height_str = FormatNumber(height, 1) + " m";
-        const std::string period_str = FormatNumber(period, 1) + " s";
-        Log(LogLevel::Success, CreateAlignedLine("•", "Type", wave_type), LogColor::White);
-        Log(LogLevel::Success, CreateAlignedLine("•", "Height", height_str), LogColor::White);
-        Log(LogLevel::Success, CreateAlignedLine("•", "Period", period_str), LogColor::White);
-        if (direction != 0.0) Log(LogLevel::Success, CreateAlignedLine("•", "Direction", FormatNumber(direction, 1) + "°"), LogColor::White);
-        if (phase != 0.0) Log(LogLevel::Success, CreateAlignedLine("•", "Phase", FormatNumber(phase, 1) + "°"), LogColor::White);
-        ShowEmptyLine();
-    }
+void CLILogger::ShowWaveModel(const std::string& wave_type, double height, double period, double direction, double phase) {
+    ShowEmptyLine();
+    ShowHeader("🌊 Wave Model");
+    const std::string height_str = FormatNumber(height, 3) + " m";
+    const std::string period_str = FormatNumber(period, 3) + " s";
+    Log(LogLevel::Success, CreateAlignedLine("•", "Type", wave_type), LogColor::White);
+    Log(LogLevel::Success, CreateAlignedLine("•", "Height", height_str), LogColor::White);
+    Log(LogLevel::Success, CreateAlignedLine("•", "Period", period_str), LogColor::White);
+    if (direction != 0.0) Log(LogLevel::Success, CreateAlignedLine("•", "Direction", FormatNumber(direction, 1) + "°"), LogColor::White);
+    if (phase != 0.0) Log(LogLevel::Success, CreateAlignedLine("•", "Phase", FormatNumber(phase, 1) + "°"), LogColor::White);
+    ShowEmptyLine();
+}
 
-inline void CLILogger::ShowSimulationResults(double final_time, int steps, double wall_time) {
+void CLILogger::ShowSimulationResults(double final_time, int steps, double wall_time) {
     ShowEmptyLine();
     ShowHeader("✅ Simulation Complete");
     Log(LogLevel::Success, CreateAlignedLine("•", "Final Time", FormatNumber(final_time, 2) + " s"), LogColor::White);
     Log(LogLevel::Success, CreateAlignedLine("•", "Steps", std::to_string(steps)), LogColor::White);
+    // Note: Duration and Wall Time are currently equivalent in this context.
     Log(LogLevel::Success, CreateAlignedLine("•", "Duration", FormatNumber(wall_time, 2) + " s"), LogColor::White);
     Log(LogLevel::Success, CreateAlignedLine("•", "Wall Time", FormatNumber(wall_time, 2) + " s"), LogColor::White);
     ShowEmptyLine();
 }
 
-inline void CLILogger::ShowLogFileLocation(const std::string& log_path) {
+void CLILogger::ShowLogFileLocation(const std::string& log_path) {
     if (log_path.empty()) return; // do not show if file logging disabled
     ShowEmptyLine();
     ShowHeader("📄 Log File");
-    // Print concise relative path from current working directory if possible
-    std::string path_to_show = log_path;
-    try {
-        std::filesystem::path p = std::filesystem::path(log_path);
-        std::filesystem::path cwd = std::filesystem::current_path();
-        std::error_code ec;
-        std::filesystem::path rel = std::filesystem::relative(p, cwd, ec);
-        std::string rel_str = (!ec && !rel.empty()) ? rel.generic_string() : p.generic_string();
-        // Prefer showing from 'logs/' onward if present
-        auto logs_pos = rel_str.rfind("/logs/");
-        if (logs_pos != std::string::npos) {
-            path_to_show = rel_str.substr(logs_pos + 1); // keep 'logs/...'
-        } else {
-            path_to_show = rel_str;
-        }
-    } catch (...) {
-        // fallback to original path
+    // Prefer concise display starting from 'logs/' if present; avoid filesystem deps
+    std::string normalized = log_path;
+    ReplaceAll(normalized, "\\\\", "/");
+    ReplaceAll(normalized, "\\", "/");
+    std::string path_to_show = normalized;
+    auto pos = normalized.rfind("/logs/");
+    if (pos != std::string::npos && pos + 1 < normalized.size()) {
+        path_to_show = normalized.substr(pos + 1); // keep 'logs/...'
     }
     Log(LogLevel::Success, std::string("📄 Log written to: ") + path_to_show, LogColor::Blue);
     ShowEmptyLine();
 }
 
-inline void CLILogger::ShowFooter() {
+void CLILogger::ShowFooter() {
     ShowEmptyLine();
     ShowHeader("✅ End of Output");
     Log(LogLevel::Success, std::string("💧 Part of Project SEA-Stack • Building the Next Generation of Marine Simulation Software."), LogColor::Gray);
     ShowEmptyLine();
 }
 
-inline void CLILogger::DisplayWarnings() {
+void CLILogger::DisplayWarnings() {
     if (collected_warnings_.empty()) return;
     ShowEmptyLine();
     ShowHeader("⚠️ Warnings");
@@ -350,6 +387,9 @@ namespace {
     bool g_initialized = false;
 
     // Stream capture machinery to route stray std::cout/std::cerr to our logger
+    // Stream buffer wrapper that mirrors characters to the original stream while
+    // routing complete lines into our logger. It avoids recursion by consulting
+    // `g_in_logger_write` and preserves carriage-return based progress updates.
     struct LoggerStreambuf : public std::streambuf {
         enum class StreamKind { StdOut, StdErr };
 
@@ -357,15 +397,17 @@ namespace {
             : original_(original), kind_(kind) {}
 
       protected:
-        int overflow(int ch) override {
-            if (ch == EOF) {
-                return 0;
+        int_type overflow(int_type ch) override {
+            if (traits_type::eq_int_type(ch, traits_type::eof())) {
+                return traits_type::not_eof(ch);
             }
-            char c = static_cast<char>(ch);
+            char c = traits_type::to_char_type(ch);
             // If logger is actively writing, bypass interception entirely
             if (g_in_logger_write) {
                 if (original_) {
-                    original_->sputc(c);
+                    if (traits_type::eq_int_type(original_->sputc(c), traits_type::eof())) {
+                        return traits_type::eof();
+                    }
                 }
                 return ch;
             }
@@ -381,7 +423,7 @@ namespace {
             if (!g_in_logger_write) {
                 FlushBuffer();
             }
-            return 0;
+            return original_ ? original_->pubsync() : 0;
         }
 
       private:
@@ -396,6 +438,17 @@ namespace {
 
             // If logger is actively writing, do not emit buffered external text now
             if (g_in_logger_write) {
+                return;
+            }
+
+            // If buffer contains a carriage return, forward as-is without appending
+            // a newline (commonly used for in-place progress updates coming from
+            // external libraries). We bypass the logger to preserve terminal state.
+            if (buffer_.find('\r') != std::string::npos) {
+                if (original_) {
+                    original_->sputn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+                }
+                buffer_.clear();
                 return;
             }
 
@@ -477,6 +530,8 @@ bool Initialize(const LoggingConfig& config) {
     g_cerr_capture = std::make_unique<LoggerStreambuf>(g_orig_cerr, LoggerStreambuf::StreamKind::StdErr);
     std::cout.rdbuf(g_cout_capture.get());
     std::cerr.rdbuf(g_cerr_capture.get());
+    // Ensure restoration happens even if user code forgets to call Shutdown.
+    std::atexit([](){ Shutdown(); });
     g_initialized = true;
     return true;
 }
@@ -504,7 +559,7 @@ static std::shared_ptr<CLILogger> GetCLILogger() {
     return g_cli_logger;
 }
 
-bool IsInitialized() {
+bool IsInitialized() noexcept {
     std::lock_guard<std::mutex> lock(g_logging_mutex);
     return g_initialized && g_backend != nullptr;
 }
@@ -646,6 +701,20 @@ std::string CreateAlignedLine(const std::string& icon, const std::string& label,
     return icon + " " + label + " : " + value;
 }
 
+void ShowProgress(size_t current, size_t total, const std::string& message) {
+    auto logger = GetCLILogger();
+    if (logger) {
+        logger->ShowProgress(current, total, message);
+    }
+}
+
+void StopProgress() {
+    auto logger = GetCLILogger();
+    if (logger) {
+        logger->StopProgress();
+    }
+}
+
 } // namespace cli
 
 //-----------------------------------------------------------------------------
@@ -677,74 +746,14 @@ void LogError(const std::string& message) {
     hydroc::cli::LogError(message);
 }
 
-void LogSystemInfo() {
-    // Minimal stub - could be expanded in backend as needed
-}
-
-void LogExecutableInfo() {
-    // Minimal stub
-}
-
-void LogCommandLineArgs(int argc, char** argv) {
-    // Minimal stub
-}
-
-void LogEnvironmentVars(bool include_all) {
-    // Minimal stub
-}
-
-void LogMemoryInfo() {
-    // Minimal stub
-}
-
-void LogCPUInfo() {
-    // Minimal stub
-}
-
-void LogPlatformInfo() {
-    // Minimal stub
-}
-
-size_t StartTimer(const std::string& timer_name) {
-    // Minimal stub
-    return 0;
-}
-
-void StopTimer(size_t timer_id) {
-    // Minimal stub
-}
-
-void LogPerformance(const std::string& operation_name, double duration_ms) {
-    // Minimal stub
-}
-
-void LogMemoryOperation(const std::string& operation, size_t size, void* ptr) {
-    // Minimal stub
-}
-
-void LogFunctionEntry(const std::string& function_name) {
-    hydroc::debug::LogDebug(std::string("→ Entering: ") + function_name);
-}
-
-void LogFunctionExit(const std::string& function_name) {
-    hydroc::debug::LogDebug(std::string("← Exiting: ") + function_name);
-}
-
-void LogVariable(const std::string& variable_name, const std::string& value) {
-    hydroc::debug::LogDebug(std::string("Variable: ") + variable_name + " = " + value);
-}
-
-void LogStackTrace() {
-    // Minimal stub
-}
-
-void LogThreadInfo() {
-    // Minimal stub
-}
-
-bool IsDebugEnabled() {
+bool IsDebugEnabled() noexcept {
     std::lock_guard<std::mutex> lock(g_logging_mutex);
-    return g_initialized;
+    if (!g_initialized || !g_backend) return false;
+    const auto& cfg = g_backend->GetConfig();
+    // Enable if explicitly requested or if either sink is set to Debug threshold
+    return cfg.enable_debug_logging ||
+           cfg.console_level == LogLevel::Debug ||
+           cfg.file_level == LogLevel::Debug;
 }
 
 } // namespace debug
@@ -753,7 +762,7 @@ bool IsDebugEnabled() {
 // Shared helpers implementation
 //-----------------------------------------------------------------------------
 
-std::string LogLevelToString(LogLevel level) {
+std::string LogLevelToString(LogLevel level) noexcept {
     switch (level) {
     case LogLevel::Debug: return "DEBUG";
     case LogLevel::Info: return "INFO";
@@ -764,7 +773,7 @@ std::string LogLevelToString(LogLevel level) {
     return "INFO";
 }
 
-std::string GetColorCode(LogColor color) {
+std::string GetColorCode(LogColor color) noexcept {
     switch (color) {
     case LogColor::White: return "\033[37m";
     case LogColor::Green: return "\033[32m";

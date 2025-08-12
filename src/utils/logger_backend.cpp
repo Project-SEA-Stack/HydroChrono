@@ -4,22 +4,25 @@
  */
 
 #include "logger_backend.h"
-#include <hydroc/logging.h>
+#if __has_include(<hydroc/logging.h>)
+#  include <hydroc/logging.h>
+#else
+#  include "../../include/hydroc/logging.h"
+#endif
 #include <iostream>
-#include <iomanip>
 #include <sstream>
-#include <filesystem>
-#include <algorithm>
-#include <cassert>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <sysinfoapi.h>
+#include <direct.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #else
 #include <unistd.h>
 #include <limits.h>
+#include <sys/stat.h>
+#include <errno.h>
 #endif
 
 // Version information - these should be defined by the build system
@@ -35,6 +38,105 @@
 
 namespace hydroc {
 
+//------------------------------------------------------------------------------
+// Local path utilities (portable, minimal, no <filesystem> dependency)
+//------------------------------------------------------------------------------
+
+namespace {
+
+    inline bool IsPathSeparator(char c) {
+        return c == '/' || c == '\\';
+    }
+
+    // Return parent directory portion of a file path (empty if none)
+    std::string ExtractParentDirectory(const std::string& file_path) {
+        if (file_path.empty()) return std::string();
+        size_t end = file_path.size();
+        // Trim trailing separators
+        while (end > 0 && IsPathSeparator(file_path[end - 1])) {
+            --end;
+        }
+        // Find last separator
+        size_t pos = std::string::npos;
+        for (size_t i = end; i > 0; --i) {
+            if (IsPathSeparator(file_path[i - 1])) { pos = i - 1; break; }
+        }
+        if (pos == std::string::npos) return std::string();
+        // Handle Windows drive roots like "C:\\"
+        if (pos == 2 && file_path[1] == ':') {
+            // Parent of drive root is the root itself (e.g., "C:\\")
+            return file_path.substr(0, 3);
+        }
+        return file_path.substr(0, pos);
+    }
+
+    // Return the last path component (file name)
+    std::string ExtractFileName(const std::string& file_path) {
+        if (file_path.empty()) return std::string();
+        size_t start = 0;
+        for (size_t i = file_path.size(); i > 0; --i) {
+            if (IsPathSeparator(file_path[i - 1])) { start = i; break; }
+        }
+        return file_path.substr(start);
+    }
+
+    // Recursively create directories for the given absolute or relative path.
+    bool EnsureDirectoriesExist(const std::string& dir_path) {
+        if (dir_path.empty()) return true;
+
+        std::string accum;
+        accum.reserve(dir_path.size());
+
+        // On Windows, preserve drive prefix like "C:" if present
+        size_t idx = 0;
+#ifdef _WIN32
+        if (dir_path.size() >= 2 && dir_path[1] == ':') {
+            accum += dir_path[0];
+            accum += ':';
+            idx = 2;
+        }
+#endif
+        for (; idx < dir_path.size(); ++idx) {
+            char c = dir_path[idx];
+            accum += c;
+            if (IsPathSeparator(c)) {
+                // Skip creating empty/duplicate separators
+                if (accum.size() <= 1) continue;
+#ifdef _WIN32
+                // Avoid calling CreateDirectory on drive root like "C:\\"
+                if (accum.size() == 3 && accum[1] == ':' && IsPathSeparator(accum[2])) continue;
+                if (!CreateDirectoryA(accum.c_str(), nullptr)) {
+                    DWORD err = GetLastError();
+                    if (err != ERROR_ALREADY_EXISTS) return false;
+                }
+#else
+                if (mkdir(accum.c_str(), 0755) != 0) {
+                    if (errno != EEXIST) return false;
+                }
+#endif
+            }
+        }
+
+        // Create the final directory if the path does not end with separator
+        if (!dir_path.empty() && !IsPathSeparator(dir_path.back())) {
+#ifdef _WIN32
+            if (!(dir_path.size() == 2 && dir_path[1] == ':')) {
+                if (!CreateDirectoryA(dir_path.c_str(), nullptr)) {
+                    DWORD err = GetLastError();
+                    if (err != ERROR_ALREADY_EXISTS) return false;
+                }
+            }
+#else
+            if (mkdir(dir_path.c_str(), 0755) != 0) {
+                if (errno != EEXIST) return false;
+            }
+#endif
+        }
+        return true;
+    }
+
+} // namespace
+
 //-----------------------------------------------------------------------------
 // LoggerBackend Implementation
 //-----------------------------------------------------------------------------
@@ -42,12 +144,11 @@ namespace hydroc {
 LoggerBackend::LoggerBackend(const LoggingConfig& config)
     : config_(config), file_initialized_(false) {
     
-    start_time_ = std::chrono::system_clock::now();
-    stats_.start_time = start_time_;
+    stats_.start_time = std::chrono::system_clock::now();
     
     // Initialize platform-specific data
     executable_path_ = GetPlatformExecutableInfo();
-    executable_name_ = std::filesystem::path(executable_path_).filename().string();
+    executable_name_ = ExtractFileName(executable_path_);
     
     // Initialize log file if file output is enabled
     if (config_.enable_file_output && !config_.log_file_path.empty()) {
@@ -69,8 +170,7 @@ LoggerBackend::LoggerBackend(LoggerBackend&& other) noexcept
       stats_(std::move(other.stats_)),
       file_initialized_(other.file_initialized_),
       executable_path_(std::move(other.executable_path_)),
-      executable_name_(std::move(other.executable_name_)),
-      start_time_(other.start_time_) {
+      executable_name_(std::move(other.executable_name_)) {
     other.file_initialized_ = false;
 }
 
@@ -86,7 +186,7 @@ LoggerBackend& LoggerBackend::operator=(LoggerBackend&& other) noexcept {
         file_initialized_ = other.file_initialized_;
         executable_path_ = std::move(other.executable_path_);
         executable_name_ = std::move(other.executable_name_);
-        start_time_ = other.start_time_;
+        /* no per-instance start_time_ field */
         
         other.file_initialized_ = false;
     }
@@ -99,7 +199,7 @@ void LoggerBackend::Log(LogLevel level, const std::string& message,
     
     // Update statistics
     stats_.total_messages++;
-    if (static_cast<size_t>(level) < 5) {
+    if (static_cast<size_t>(level) < kNumLogLevels) {
         stats_.messages_by_level[static_cast<size_t>(level)]++;
     }
     
@@ -116,12 +216,12 @@ void LoggerBackend::Log(LogLevel level, const std::string& message,
     }
 }
 
-bool LoggerBackend::ShouldLog(LogLevel level, bool is_console_output) const {
+bool LoggerBackend::ShouldLog(LogLevel level, bool is_console_output) const noexcept {
     int threshold = static_cast<int>(is_console_output ? config_.console_level : config_.file_level);
     return static_cast<int>(level) >= threshold;
 }
 
-const LoggingConfig& LoggerBackend::GetConfig() const {
+const LoggingConfig& LoggerBackend::GetConfig() const noexcept {
     return config_;
 }
 
@@ -135,11 +235,11 @@ void LoggerBackend::UpdateConfig(const LoggingConfig& config) {
     }
 }
 
-bool LoggerBackend::IsFileLoggingEnabled() const {
+bool LoggerBackend::IsFileLoggingEnabled() const noexcept {
     return file_initialized_ && log_file_.is_open();
 }
 
-std::string LoggerBackend::GetLogFilePath() const {
+std::string LoggerBackend::GetLogFilePath() const noexcept {
     if (!file_initialized_) {
         return "";
     }
@@ -194,7 +294,7 @@ void LoggerBackend::WriteSystemInfo() {
     }
 }
 
-LoggerBackend::LogStats LoggerBackend::GetStats() const {
+LoggerBackend::LogStats LoggerBackend::GetStats() const noexcept {
     std::lock_guard<std::mutex> lock(log_mutex_);
     return stats_;
 }
@@ -211,12 +311,12 @@ void LoggerBackend::ResetStats() {
 
 bool LoggerBackend::InitializeLogFile() {
     try {
-        // Create directory if it doesn't exist
-        std::filesystem::path log_path(config_.log_file_path);
-        std::filesystem::path log_dir = log_path.parent_path();
-        
-        if (!log_dir.empty() && !std::filesystem::exists(log_dir)) {
-            std::filesystem::create_directories(log_dir);
+        // Create parent directory if it doesn't exist (portable, no <filesystem>)
+        const std::string log_dir = ExtractParentDirectory(config_.log_file_path);
+        if (!log_dir.empty()) {
+            if (!EnsureDirectoriesExist(log_dir)) {
+                return false;
+            }
         }
         
         // Open log file
@@ -293,13 +393,15 @@ std::string LoggerBackend::CreateLogHeader() {
     ss << " HydroChrono version: " << HYDROCHRONO_VERSION << "\n";
     ss << " Chrono version:      " << CHRONO_VERSION << "\n";
     ss << " Build type:          " << HYDROCHRONO_BUILD_TYPE << "\n";
-    ss << " Platform:            "
+    ss << " Platform:            ";
 #ifdef _WIN32
-       << "Windows"
+    ss << "Windows";
+#elif defined(__APPLE__)
+    ss << "macOS";
 #else
-       << "Linux"
+    ss << "Linux";
 #endif
-       << "\n";
+    ss << "\n";
     
     ss << GetSystemInfo();
     

@@ -251,6 +251,8 @@ set(HYDROCHRONO_SOURCES
     # logging consolidated: coordinator + CLI (logging.cpp), backend (logger_backend.cpp)
     src/utils/logger_backend.cpp
     src/utils/logging.cpp
+    src/h5_writer.cpp
+    src/simulation_exporter.cpp
 )
 
 # Create the library target and configure it
@@ -290,7 +292,9 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
     )
 
     target_include_directories(run_hydrochrono
-        PRIVATE ${PROJECT_SOURCE_DIR}/include
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+            ${PROJECT_SOURCE_DIR}/src/utils
     )
 
     set_target_properties(run_hydrochrono PROPERTIES

@@ -14,11 +14,13 @@
 #include <windows.h>
 #endif
 
-void PrintBanner() { hydroc::cli::ShowBanner(); }
+namespace {
 
-void PrintVersion() { hydroc::cli::LogInfo(std::string(HYDROCHRONO_NAME) + " version " + HYDROCHRONO_VERSION); }
+static void PrintBanner() noexcept { hydroc::cli::ShowBanner(); }
 
-void PrintInfo() { hydroc::cli::ShowBanner(); }
+static void PrintVersion() noexcept { hydroc::cli::LogInfo(std::string(HYDROCHRONO_NAME) + " version " + HYDROCHRONO_VERSION); }
+
+static void PrintInfo() noexcept { hydroc::cli::ShowBanner(); }
 
 void PrintHelp(const char* program_name) {
     hydroc::cli::ShowEmptyLine();
@@ -38,6 +40,10 @@ void PrintHelp(const char* program_name) {
     hydroc::cli::LogInfo("      --quiet          Quiet mode (minimal output)");
     hydroc::cli::LogInfo("      --debug          Enable detailed simulation diagnostics");
     hydroc::cli::LogInfo("      --trace          Enable step-by-step simulation tracing (implies --debug)");
+    hydroc::cli::LogInfo("      --output-h5 PATH Export results to HDF5 file with model+results");
+    hydroc::cli::LogInfo("      --h5-verbose     Print detailed HDF5 discovery/sampling diagnostics");
+    hydroc::cli::LogInfo("      --tag STR        Append __STR to generated HDF5 filename (before .h5)");
+    hydroc::cli::LogInfo("      --fail-fast      Stop on first failed run when sweeping periods");
     hydroc::cli::ShowEmptyLine();
     hydroc::cli::LogInfo("EXAMPLES");
     hydroc::cli::LogInfo(std::string("  # Run simulation with GUI using directory"));
@@ -73,9 +79,13 @@ struct CLIArgs {
     bool quiet = false;                 // NEW: Quiet mode (minimal output)
     bool debug = false;                 // NEW: Enable detailed simulation diagnostics
     bool trace = false;                 // NEW: Enable step-by-step simulation tracing
+    std::string output_h5;              // NEW: Export HDF5 results path
+    bool h5_verbose = false;            // NEW: HDF5 verbose diagnostics
+    std::string h5_tag;                 // NEW: Optional tag appended to filename
+    bool fail_fast = false;             // NEW: Stop on first failure during sweep
 };
 
-CLIArgs ParseArguments(int argc, char* argv[]) {
+static CLIArgs ParseArguments(int argc, char* argv[]) {
     CLIArgs args;
     
     for (int i = 1; i < argc; i++) {
@@ -108,6 +118,24 @@ CLIArgs ParseArguments(int argc, char* argv[]) {
                 hydroc::cli::LogError("ERROR: --sim_file requires a file path argument");
                 std::exit(1);
             }
+        } else if (arg == "--output-h5") {
+            if (i + 1 < argc) {
+                args.output_h5 = argv[++i];
+            } else {
+                hydroc::cli::LogError("ERROR: --output-h5 requires a file path argument");
+                std::exit(1);
+            }
+        } else if (arg == "--h5-verbose") {
+            args.h5_verbose = true;
+        } else if (arg == "--tag") {
+            if (i + 1 < argc) {
+                args.h5_tag = argv[++i];
+            } else {
+                hydroc::cli::LogError("ERROR: --tag requires a value");
+                std::exit(1);
+            }
+        } else if (arg == "--fail-fast") {
+            args.fail_fast = true;
         } else if (arg.substr(0, 1) != "-") {
             // This is a positional argument (input directory)
             if (args.input_directory.empty()) {
@@ -125,6 +153,8 @@ CLIArgs ParseArguments(int argc, char* argv[]) {
     
     return args;
 }
+
+} // anonymous namespace
 
 int main(int argc, char* argv[]) {
     // ---------------------------------------------------------------------
@@ -148,8 +178,8 @@ int main(int argc, char* argv[]) {
             hydroc::LoggingConfig cfg;
             cfg.enable_cli_output = true;
             cfg.enable_file_output = false;
-            cfg.console_level = hydroc::LoggingConfig::Level::Info;
-            cfg.file_level = hydroc::LoggingConfig::Level::Info;
+            cfg.console_level = hydroc::LogLevel::Info;
+            cfg.file_level = hydroc::LogLevel::Info;
             hydroc::Initialize(cfg);
             PrintHelp(argv[0]);
             hydroc::Shutdown();
@@ -158,8 +188,8 @@ int main(int argc, char* argv[]) {
             hydroc::LoggingConfig cfg;
             cfg.enable_cli_output = true;
             cfg.enable_file_output = false;
-            cfg.console_level = hydroc::LoggingConfig::Level::Info;
-            cfg.file_level = hydroc::LoggingConfig::Level::Info;
+            cfg.console_level = hydroc::LogLevel::Info;
+            cfg.file_level = hydroc::LogLevel::Info;
             hydroc::Initialize(cfg);
             PrintVersion();
             hydroc::Shutdown();
@@ -168,8 +198,8 @@ int main(int argc, char* argv[]) {
             hydroc::LoggingConfig cfg;
             cfg.enable_cli_output = true;
             cfg.enable_file_output = false;
-            cfg.console_level = hydroc::LoggingConfig::Level::Info;
-            cfg.file_level = hydroc::LoggingConfig::Level::Info;
+            cfg.console_level = hydroc::LogLevel::Info;
+            cfg.file_level = hydroc::LogLevel::Info;
             hydroc::Initialize(cfg);
             PrintInfo();
             hydroc::Shutdown();
@@ -265,6 +295,13 @@ int main(int argc, char* argv[]) {
         runner_args.push_back("--sim_file");
         runner_args.push_back(args.sim_file);
     }
+    if (!args.output_h5.empty()) {
+        runner_args.push_back("--output-h5");
+        runner_args.push_back(args.output_h5);
+    }
+    if (args.fail_fast) {
+        runner_args.push_back("--fail-fast");
+    }
     
     // Convert to argc/argv format for the runner
     std::vector<char*> runner_argv;
@@ -273,5 +310,5 @@ int main(int argc, char* argv[]) {
     }
     
     // Call the YAML runner
-    return hydroc::RunHydroChronoFromYAML(runner_argv.size(), runner_argv.data());
+    return hydroc::RunHydroChronoFromYAML(static_cast<int>(runner_argv.size()), runner_argv.data());
 }

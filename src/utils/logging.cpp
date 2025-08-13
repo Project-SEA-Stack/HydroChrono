@@ -54,7 +54,7 @@ public:
      */
     explicit CLILogger(std::shared_ptr<LoggerBackend> backend)
         : backend_(std::move(backend)), showing_progress_(false),
-          progress_last_width_(0) {}
+          progress_last_width_(0), progress_completed_(false) {}
 
     ~CLILogger() = default;
     CLILogger(const CLILogger&) = delete;
@@ -150,6 +150,7 @@ public:
      */
     void ShowProgress(size_t current, size_t total, const std::string& message = "") {
         showing_progress_ = true;
+        progress_completed_ = false;
         UpdateProgressDisplay(current, total, message);
     }
     /**
@@ -167,13 +168,16 @@ public:
      */
     void StopProgress() noexcept {
         if (showing_progress_) {
-            // Clear the progress line and move to next line
             LoggingWriteGuard guard;
-            std::cerr << "\r";
-            for (int i = 0; i < progress_last_width_; ++i) std::cerr << ' ';
-            std::cerr << "\r" << std::endl;
+            if (!progress_completed_) {
+                // Clear the in-place progress line only if not completed
+                std::cerr << "\r";
+                for (int i = 0; i < progress_last_width_; ++i) std::cerr << ' ';
+                std::cerr << "\r" << std::endl;
+            }
             showing_progress_ = false;
             progress_last_width_ = 0;
+            progress_completed_ = false;
         }
     }
 
@@ -259,6 +263,16 @@ private:
         for (int i = 0; i < pad; ++i) std::cerr << ' ';
         std::cerr << std::flush;
         progress_last_width_ = static_cast<int>(progress_text.size());
+
+        // If we've reached or exceeded total, finalize the line with a newline and mark complete
+        if (current >= total) {
+            std::cerr << std::endl;
+            showing_progress_ = false;
+            progress_last_width_ = 0;
+            progress_completed_ = true;
+        } else {
+            progress_completed_ = false;
+        }
     }
     /**
      * @brief Compute the current spinner glyph based on elapsed time.
@@ -271,6 +285,7 @@ private:
     std::unordered_set<std::string> warning_set_;
     bool showing_progress_;
     int progress_last_width_;
+    bool progress_completed_;
     // Spinner timing removed
 };
 

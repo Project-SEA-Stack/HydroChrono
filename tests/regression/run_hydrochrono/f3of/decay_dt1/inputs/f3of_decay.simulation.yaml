@@ -1,0 +1,20 @@
+chrono-version: 9.0
+
+simulation:
+  contact_method: SMC
+  
+  time_step: 0.02
+  end_time: 150.0
+  enforce_realtime: false
+  gravity: [0, 0, -9.81]
+  
+  solver:
+    type: SPARSE_QR
+
+  visualization:
+    type: MODEL_FILE
+    render_fps: 120
+    enable_shadows: true
+    camera:
+      vertical: Z
+

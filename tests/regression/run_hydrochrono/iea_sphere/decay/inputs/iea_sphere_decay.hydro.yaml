@@ -1,0 +1,9 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      # Localized for the test: use assets copied under tests/run_hydrochrono/iea_sphere/assets
+      h5_file: ../../assets/hydroData/iea_sphere.h5
+
+  waves:
+    type: still
+

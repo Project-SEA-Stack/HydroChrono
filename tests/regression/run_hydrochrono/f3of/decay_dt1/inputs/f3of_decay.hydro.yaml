@@ -1,0 +1,12 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../../assets/hydroData/f3of.h5
+    - name: body2
+      h5_file: ../../assets/hydroData/f3of.h5
+    - name: body3
+      h5_file: ../../assets/hydroData/f3of.h5
+
+  waves:
+    type: still
+

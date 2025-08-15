@@ -55,3 +55,9 @@ results/
 **/results/
 *.log
 build-config.json
+/tests/regression/run_hydrochrono/f3of/decay_dt1/outputs
+/tests/regression/run_hydrochrono/f3of/decay_dt2/outputs
+/tests/regression/run_hydrochrono/f3of/decay_dt3/outputs
+/tests/regression/run_hydrochrono/iea_sphere/decay/outputs
+/tests/regression/run_hydrochrono/oswec/decay/outputs
+/tests/regression/run_hydrochrono/rm3/decay/outputs

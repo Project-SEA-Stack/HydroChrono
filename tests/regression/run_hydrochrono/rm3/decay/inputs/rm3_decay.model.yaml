@@ -1,0 +1,72 @@
+chrono-version: 9.0
+
+model:
+  name: rm3_linearPTO_model
+  angle_degrees: false
+  
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1
+      location: [0.0, 0.0, -0.62]
+      mass: 725834
+      fixed: false
+      inertia:
+        moments: [20907301.0, 21306090.66, 37085481.11]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../../assets/geometry/float_cog.obj
+
+    - name: body2
+      location: [0.0, 0.0, -21.29]
+      mass: 886691
+      fixed: false
+      inertia:
+        moments: [94419614.57, 94407091.24, 28542224.82]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../../assets/geometry/plate_cog.obj
+
+    - name: ground
+      location: [0, 0, 0]
+      mass: 999
+      fixed: true
+      inertia:
+        moments: [999, 999, 999]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+
+  joints:
+    - name: float_plate_joint
+      type: PRISMATIC
+      body1: body1
+      body2: body2
+      location: [0, 0, -0.72]
+      axis: [0, 0, 1]
+
+  tsdas:
+    - name: PTO
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [0, 0, -0.72]
+      point2: [0, 0, -21.29]
+      spring_coefficient: 0
+      damping_coefficient: 0 # 1200000
+      free_length: 0.0
+      visualization:
+        type: SPRING
+        radius: 0.3
+        resolution: 80
+        turns: 15
+

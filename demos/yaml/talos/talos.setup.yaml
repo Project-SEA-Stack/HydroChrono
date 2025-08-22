@@ -1,0 +1,4 @@
+model_file: talos_linearPTO.model.yaml
+simulation_file: talos.simulation.yaml
+hydro_file: talos.hydro.yaml
+output_directory: results/talos_testing

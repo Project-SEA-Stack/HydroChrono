@@ -3,8 +3,8 @@ chrono-version: 9.0
 simulation:
   contact_method: SMC
   
-  time_step: 0.01
-  end_time: 40.0
+  time_step: 0.025
+  end_time: 64.0
   enforce_realtime: false
   gravity: [0, 0, -9.8]
 

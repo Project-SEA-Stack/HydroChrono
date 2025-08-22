@@ -1,0 +1,99 @@
+chrono-version: 9.0
+
+model:
+  name: talos_model
+  angle_degrees: false
+  
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1  # Hull (hydrodynamic body)
+      location: [0.0, 0.0, -7.96]
+      mass: 2826658.9
+      fixed: false
+      inertia:
+        moments: [3533324.11, 3533324.11, 3533324.11]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      orientation: [0, 0, 0]
+      visualization:
+        mesh: talos_geometry/talos_shifted.obj
+
+    - name: body2  # Internal mass (non-hydro)
+      location: [0.0, 0.0, -5.0]
+      mass: 706664.725
+      fixed: false
+      inertia:
+        moments: [1709810.20, 1709810.20, 1709810.20]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      orientation: [0, 0, 0]
+      visualization:
+        mesh: talos_geometry/talos_shifted.obj
+
+  tsdas:
+    - name: pto1
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [5.0, 0.0, -8.66]
+      point2: [2.5, 0.0, -4.33]
+      spring_coefficient: 250000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0
+
+    - name: pto2
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [-2.5, 4.33, -8.66]
+      point2: [-1.25, 2.165, -4.33]
+      spring_coefficient: 250000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0
+
+    - name: pto3
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [-2.5, -4.33, -8.66]
+      point2: [-1.25, -2.165, -4.33]
+      spring_coefficient: 250000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0
+
+    - name: pto4
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [6.25, 0.0, 8.66]
+      point2: [2.5, 0.0, 4.33]
+      spring_coefficient: 2500000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0
+
+    - name: pto5
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [-3.125, 5.4125, 8.66]
+      point2: [-1.25, 2.165, 4.33]
+      spring_coefficient: 2500000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0
+
+    - name: pto6
+      type: TSDA
+      body1: body1
+      body2: body2
+      point1: [-3.125, -5.4125, 8.66]
+      point2: [-1.25, -2.165, 4.33]
+      spring_coefficient: 2500000.0
+      damping_coefficient: 1000000.0
+      free_length: 1.0

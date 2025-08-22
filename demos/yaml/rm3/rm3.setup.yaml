@@ -2,7 +2,7 @@
 # Default model: Linear PTO (simple damper)
 # Alternative: Use --model_file rm3_nonlinearPTO.model.yaml for nonlinear PTO
 
-model_file: rm3_linearPTO.model.yaml
+model_file: rm3_linearPTO_decay.model.yaml
 simulation_file: rm3.simulation.yaml
-hydro_file: rm3.hydro.yaml
+hydro_file: rm3_decay.hydro.yaml
 output_directory: results/rm3_linearPTO_decay

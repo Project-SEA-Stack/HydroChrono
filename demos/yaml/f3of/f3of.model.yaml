@@ -14,7 +14,7 @@ model:
       mass: 1089825
       fixed: false
       inertia:
-        moments: [1089825, 1089825, 1089825]
+        moments: [100000000.0, 76300000.0, 100000000.0]
         products: [0.0, 0.0, 0.0]
       com:
         location: [0.0, 0.0, 0.0]

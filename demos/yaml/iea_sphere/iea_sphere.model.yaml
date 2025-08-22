@@ -9,6 +9,23 @@ model:
     root: "."
 
   bodies:
+    - name: body1
+      location: [0, 0, -1.0]
+      mass: 261800
+      fixed: false
+      inertia:
+        moments: [999, 999, 999]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        shapes:
+          - type: SPHERE
+            radius: 5.0
+            location: [0, 0, 0]
+            color: [0.3, 0.1, 0.1]
+            
     - name: ground
       location: [0, 0, 0]
       mass: 999
@@ -19,23 +36,6 @@ model:
       com:
         location: [0, 0, 0]
         orientation: [0, 0, 0]
-
-    - name: body1
-      location: [0, 0, -4.9]
-      mass: 261800
-      fixed: false
-      inertia:
-        moments: [261800, 261800, 261800]
-        products: [0, 0, 0]
-      com:
-        location: [0, 0, 0]
-        orientation: [0, 0, 0]
-      visualization:
-        shapes:
-          - type: SPHERE
-            radius: 0.5
-            location: [0, 0, 0]
-            color: [0.3, 0.1, 0.1]
 
   joints:
     - name: motion_constraint_heave
@@ -51,7 +51,7 @@ model:
       body1: ground
       body2: body1
       point1: [0, 0, 0]
-      point2: [0, 0, -4.9]
+      point2: [0, 0, 0]
       spring_coefficient: 0.0
       damping_coefficient: 0.0
       free_length: 0.0

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <cmath> // For M_PI
+#include <unordered_map>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -29,7 +30,11 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
                                                  double timestep,
                                                  double sim_duration,
                                                  double ramp_duration) {
-    if (wave_settings.type == "regular") {
+    // Normalize type to lowercase to be tolerant of input casing
+    std::string type = wave_settings.type;
+    std::transform(type.begin(), type.end(), type.begin(), ::tolower);
+
+    if (type == "regular") {
         auto regular_wave = std::make_shared<RegularWave>(num_bodies);
         
         // Set wave parameters
@@ -42,7 +47,7 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
         
         return regular_wave;
         
-    } else if (wave_settings.type == "irregular") {
+    } else if (type == "irregular") {
         // Create irregular wave parameters
         IrregularWaveParams params;
         params.num_bodies_ = num_bodies;
@@ -60,7 +65,7 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
         
         return irregular_wave;
         
-    } else if (wave_settings.type == "no_wave" || wave_settings.type == "still_ci") {
+    } else if (type == "no_wave" || type == "still_ci" || type == "still") {
         auto no_wave = std::make_shared<NoWave>(num_bodies);
         
         hydroc::debug::LogDebug("Attached wave model: NoWave (still water)");

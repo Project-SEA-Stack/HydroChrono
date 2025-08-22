@@ -36,7 +36,9 @@ struct WaveSettings {
     double direction = 0.0;  // degrees, 0 = positive x
     double phase = 0.0;
     std::string spectrum = "pierson_moskowitz";  // "pierson_moskowitz", "jonswap", etc.
-    // TODO: Add irregular wave parameters (frequency range, seed, etc.)
+    int seed = -1; // optional irregular seed; -1 means unset
+    // Sweep support (expanded values) for period; if empty, use 'period'
+    std::vector<double> period_values;
     // TODO: Add spectrum parameters (peak enhancement factor, etc.)
 };
 

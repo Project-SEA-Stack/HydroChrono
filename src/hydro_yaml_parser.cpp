@@ -152,6 +152,42 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
     HydroBody current_body;
     int line_number = 0;
     
+    bool in_period_block = false;
+    int period_block_indent = 0;
+    bool period_block_seen = false;
+    bool period_form_values = false;
+    bool period_form_linspace = false;
+    bool period_form_range = false;
+
+    auto parse_inline_brace_kv = [](const std::string& v) -> std::vector<std::pair<std::string, std::string>> {
+        // Expect something like: { start: 6.0, stop: 9.0, num: 4 }
+        std::vector<std::pair<std::string, std::string>> out;
+        size_t lb = v.find('{');
+        size_t rb = v.find('}');
+        if (lb == std::string::npos || rb == std::string::npos || rb <= lb) return out;
+        std::string inner = v.substr(lb + 1, rb - lb - 1);
+        // split on commas
+        std::stringstream ss(inner);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            auto pos = token.find(':');
+            if (pos == std::string::npos) continue;
+            std::string k = token.substr(0, pos);
+            std::string val = token.substr(pos + 1);
+            // trim
+            k.erase(0, k.find_first_not_of(" \t"));
+            k.erase(k.find_last_not_of(" \t") + 1);
+            val.erase(0, val.find_first_not_of(" \t"));
+            val.erase(val.find_last_not_of(" \t") + 1);
+            // strip optional quotes
+            if (val.size() >= 2 && ((val.front() == '"' && val.back() == '"') || (val.front() == '\'' && val.back() == '\''))) {
+                val = val.substr(1, val.size() - 2);
+            }
+            out.emplace_back(k, val);
+        }
+        return out;
+    };
+
     while (std::getline(file, line)) {
         line_number++;
         
@@ -222,8 +258,11 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             continue;
         }
         
-        // Parse key-value pairs (indent = 6 for body properties, indent = 4 for wave properties)
-        if ((in_body && indent == 6) || (in_waves && indent == 4)) {
+        // Parse key-value pairs
+        // - Body properties at indent == 6
+        // - Wave properties at indent == 4
+        // - Nested period block under waves at indent >= period_block_indent + 2 when in_period_block
+        if ((in_body && indent == 6) || (in_waves && (indent == 4 || (in_period_block && indent >= period_block_indent + 2))) || (in_moordyn && indent == 4)) {
             std::string key, value;
             if (ParseYAMLLine(line, key, value)) {
                 if (in_body) {
@@ -241,20 +280,137 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     }
                 } else if (in_waves) {
                     // Parse wave properties
-                    if (key == "type") {
+                    if (!in_period_block && key == "type") {
                         data.waves.type = value;
-                    } else if (key == "height") {
+                    } else if (!in_period_block && key == "height") {
                         data.waves.height = ParseDouble(value, 0.0);
-                    } else if (key == "period") {
-                        data.waves.period = ParseDouble(value, 0.0);
-                    } else if (key == "direction") {
+                    } else if (!in_period_block && key == "period") {
+                        period_block_seen = true;
+                        period_form_values = period_form_linspace = period_form_range = false;
+                        data.waves.period_values.clear();
+                        // Scalar on same line
+                        bool looks_structured = (value.find('{') != std::string::npos || value.find('[') != std::string::npos || value.empty());
+                        if (!looks_structured) {
+                            data.waves.period = ParseDouble(value, 0.0);
+                            data.waves.period_values.push_back(data.waves.period);
+                        } else {
+                            // Inline forms on same line
+                            // values inline list inside braces
+                            if (value.find("values") != std::string::npos && value.find('[') != std::string::npos) {
+                                auto lb = value.find('['); auto rb = value.find(']');
+                                if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
+                                    std::string inner = value.substr(lb + 1, rb - lb - 1);
+                                    for (char& ch : inner) if (ch == ',') ch = ' ';
+                                    std::istringstream iss(inner);
+                                    double v; while (iss >> v) data.waves.period_values.push_back(v);
+                                    if (!data.waves.period_values.empty()) {
+                                        data.waves.period = data.waves.period_values.front();
+                                        period_form_values = true;
+                                    }
+                                }
+                            }
+                            // Start nested block
+                            if (value.empty() || value == "|" || value == ">") {
+                                in_period_block = true;
+                                period_block_indent = indent;
+                            }
+                        }
+                    } else if (in_period_block && key == "values") {
+                        // period:\n  values: [a, b, c]
+                        auto lb = value.find('['); auto rb = value.find(']');
+                        if (lb == std::string::npos || rb == std::string::npos || rb <= lb) continue;
+                        std::string inner = value.substr(lb + 1, rb - lb - 1);
+                        for (char& ch : inner) if (ch == ',') ch = ' ';
+                        std::istringstream iss(inner);
+                        double v; data.waves.period_values.clear();
+                        while (iss >> v) data.waves.period_values.push_back(v);
+                        if (!data.waves.period_values.empty()) {
+                            data.waves.period = data.waves.period_values.front();
+                            if (period_form_linspace || period_form_range) {
+                                throw std::runtime_error("waves.period: multiple forms specified (values + other)");
+                            }
+                            period_form_values = true;
+                        }
+                    } else if (in_period_block && key == "linspace") {
+                        // linspace: { start: a, stop: b, num: n }
+                        auto kv = parse_inline_brace_kv(value);
+                        double start = 0.0, stop = 0.0; int num = 0; bool hasS=false, hasE=false, hasN=false;
+                        for (auto& p : kv) {
+                            if (p.first == "start") { start = ParseDouble(p.second, 0.0); hasS = true; }
+                            else if (p.first == "stop") { stop = ParseDouble(p.second, 0.0); hasE = true; }
+                            else if (p.first == "num") { try { num = std::stoi(p.second); } catch (...) { num = 0; } hasN = true; }
+                        }
+                        if (!(hasS && hasE && hasN) || num < 2) {
+                            throw std::runtime_error("waves.period: invalid linspace (require start, stop, num>=2)");
+                        }
+                        if (period_form_values || period_form_range) {
+                            throw std::runtime_error("waves.period: multiple forms specified");
+                        }
+                        period_form_linspace = true;
+                        data.waves.period_values.clear();
+                        if (num == 2) {
+                            data.waves.period_values.push_back(start);
+                            data.waves.period_values.push_back(stop);
+                        } else {
+                            double step = (stop - start) / static_cast<double>(num - 1);
+                            for (int k = 0; k < num; ++k) {
+                                data.waves.period_values.push_back(start + step * static_cast<double>(k));
+                            }
+                        }
+                        data.waves.period = data.waves.period_values.front();
+                    } else if (in_period_block && key == "range") {
+                        // range: { start: a, stop: b, step: s, inclusive: true }
+                        auto kv = parse_inline_brace_kv(value);
+                        double start = 0.0, stop = 0.0, step = 0.0; bool inclusive = true; bool hasS=false, hasE=false, hasStep=false;
+                        for (auto& p : kv) {
+                            if (p.first == "start") { start = ParseDouble(p.second, 0.0); hasS = true; }
+                            else if (p.first == "stop") { stop = ParseDouble(p.second, 0.0); hasE = true; }
+                            else if (p.first == "step") { step = ParseDouble(p.second, 0.0); hasStep = true; }
+                            else if (p.first == "inclusive") { inclusive = ParseBool(p.second, true); }
+                        }
+                        if (!(hasS && hasE && hasStep) || step <= 0.0 || stop < start) {
+                            throw std::runtime_error("waves.period: invalid range (require start<=stop, step>0)");
+                        }
+                        if (period_form_values || period_form_linspace) {
+                            throw std::runtime_error("waves.period: multiple forms specified");
+                        }
+                        period_form_range = true;
+                        data.waves.period_values.clear();
+                        double t = start;
+                        const double eps = 1e-9;
+                        while (t < stop - eps) {
+                            data.waves.period_values.push_back(t);
+                            t += step;
+                        }
+                        if (inclusive) {
+                            if (std::fabs((data.waves.period_values.empty() ? start : data.waves.period_values.back()) - stop) > eps) {
+                                // add last if not already close to stop and within tolerance by stepping once more would overshoot but inclusive means include stop
+                                data.waves.period_values.push_back(stop);
+                            } else {
+                                // if already at stop within eps, ensure exact stop
+                                data.waves.period_values.back() = stop;
+                            }
+                        }
+                        if (data.waves.period_values.empty()) {
+                            // Degenerate (start==stop and inclusive false) not allowed per rules
+                            throw std::runtime_error("waves.period: range produced no values");
+                        }
+                        data.waves.period = data.waves.period_values.front();
+                    } else if (!in_period_block && key == "direction") {
                         data.waves.direction = ParseDouble(value, 0.0);
-                    } else if (key == "phase") {
+                    } else if (!in_period_block && key == "phase") {
                         data.waves.phase = ParseDouble(value, 0.0);
-                    } else if (key == "spectrum") {
+                    } else if (!in_period_block && key == "spectrum") {
                         data.waves.spectrum = value;
+                    } else if (!in_period_block && key == "seed") {
+                        try { data.waves.seed = std::stoi(value); } catch (...) { data.waves.seed = -1; }
+                    }
                     }
                 }
+            }
+            // Detect leaving the period block when indentation reduces back to waves level
+            if (in_period_block && indent <= period_block_indent && key != "period") {
+                in_period_block = false;
             }
         }
     }
@@ -264,6 +420,30 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         data.bodies.push_back(current_body);
     }
     
+    // Finalize period block validation if it was started
+    if (period_block_seen) {
+        // Exactly one form or a scalar must have been provided
+        int forms = 0;
+        if (period_form_values) forms++;
+        if (period_form_linspace) forms++;
+        if (period_form_range) forms++;
+        if (forms > 1) {
+            throw std::runtime_error("waves.period: multiple forms specified");
+        }
+        if (data.waves.period_values.empty()) {
+            if (data.waves.period > 0.0) {
+                data.waves.period_values.push_back(data.waves.period);
+            } else {
+                throw std::runtime_error("waves.period: invalid or empty specification");
+            }
+        }
+    } else {
+        // If no structured values captured, ensure period_values mirrors scalar period
+        if (data.waves.period_values.empty() && data.waves.period > 0.0) {
+            data.waves.period_values.push_back(data.waves.period);
+        }
+    }
+
     // Validate that we found the required sections
     if (!in_hydrodynamics) {
         throw std::runtime_error("No 'hydrodynamics:' section found in hydro file: " + hydro_file_path);

@@ -25,10 +25,11 @@ H5FileInfo::H5FileInfo(std::string file, int num_bod) {
 }
 
 HydroData H5FileInfo::ReadH5Data() {
-    // open file with read only access
-    H5::H5File userH5File(h5_file_name_, H5F_ACC_RDONLY);
-    HydroData data_to_init;
-    data_to_init.resize(num_bodies_);
+    try {
+        // open file with read only access
+        H5::H5File userH5File(h5_file_name_, H5F_ACC_RDONLY);
+        HydroData data_to_init;
+        data_to_init.resize(num_bodies_);
 
     // simparams first
     InitScalar(userH5File, "simulation_parameters/rho", data_to_init.sim_data_.rho);
@@ -89,7 +90,7 @@ HydroData H5FileInfo::ReadH5Data() {
         data_to_init.irreg_wave_data_[i].excitation_irf_matrix *= rho * g;
     }
 
-    userH5File.close();
+        userH5File.close();
     // WriteDataToFile(excitation_irf_dims, "excitation_irf_dims.txt");
     // WriteDataToFile(excitation_irf_matrix, "excitation_irf_matrix.txt");
     
@@ -162,7 +163,20 @@ HydroData H5FileInfo::ReadH5Data() {
     hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Added Mass", std::string(has_added_mass ? "Yes" : "No")));
     hydroc::cli::ShowEmptyLine();
     
-    return data_to_init;
+        return data_to_init;
+    } catch (const H5::Exception& e) {
+        std::ostringstream oss;
+        oss << "Unable to open/read HDF5 hydro data file: " << h5_file_name_ << "\n";
+        oss << "HDF5 error: " << e.getDetailMsg() << "\n";
+#ifdef _WIN32
+        oss << "This often indicates the file is locked by another application (e.g., HDFView) on Windows.\n";
+        oss << "Close any viewers or set HDF5_USE_FILE_LOCKING to FALSE (or BEST_EFFORT) and retry.\n";
+        oss << "PowerShell example: $env:HDF5_USE_FILE_LOCKING = \"FALSE\"\n";
+#else
+        oss << "Ensure the file is not in use by another process and is readable.\n";
+#endif
+        throw std::runtime_error(oss.str());
+    }
 }
 
 // squeezes the middle dimension of 1 out

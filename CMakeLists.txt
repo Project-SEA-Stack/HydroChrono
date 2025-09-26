@@ -81,6 +81,39 @@ set(HDF5_ROOT "${HDF5_ROOT}" CACHE PATH "HDF5 root directory")
 
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 
+# ---- Eigen: support both CONFIG and module modes ----
+find_package(Eigen3 QUIET CONFIG)
+if (NOT Eigen3_FOUND)
+  find_package(Eigen3 REQUIRED)  # module mode -> EIGEN3_INCLUDE_DIR
+endif()
+
+# ---- Chrono include path: prefer imported target; fall back to vars; fall back to build tree ----
+set(HC_CHRONO_INCLUDE_DIRS "")
+
+# Prefer INTERFACE includes from an imported target, if provided
+if (TARGET Chrono::Chrono_core)
+  get_target_property(HC_CHRONO_INCLUDE_DIRS Chrono::Chrono_core INTERFACE_INCLUDE_DIRECTORIES)
+endif()
+
+# Fallback to legacy variable if the package sets it
+if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED CHRONO_INCLUDE_DIRS)
+  set(HC_CHRONO_INCLUDE_DIRS ${CHRONO_INCLUDE_DIRS})
+endif()
+
+# Derive from Chrono_DIR when using Chrono from a build tree (headers live under <chrono_root>/src)
+if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED Chrono_DIR)
+  get_filename_component(_CHR_CMAKE_DIR "${Chrono_DIR}" ABSOLUTE)     # .../chrono/build/cmake
+  get_filename_component(_CHR_BUILD_DIR "${_CHR_CMAKE_DIR}" DIRECTORY)# .../chrono/build
+  get_filename_component(_CHR_ROOT      "${_CHR_BUILD_DIR}" DIRECTORY)# .../chrono
+  set(_CHR_INC_CAND "${_CHR_ROOT}/src")
+  if (EXISTS "${_CHR_INC_CAND}/chrono/core/ChMatrix.h")
+    set(HC_CHRONO_INCLUDE_DIRS "${_CHR_INC_CAND}")
+  endif()
+endif()
+
+
+
+
 #-----------------------------------------------------------------------------
 # Fix for VS 2017 15.8 and newer to handle alignment specification with Eigen
 #-----------------------------------------------------------------------------
@@ -144,18 +177,29 @@ add_library(HydroChrono STATIC ${HYDROCHRONO_SOURCES} )
 
 target_compile_features(HydroChrono PUBLIC cxx_std_17)
 
-target_include_directories(
-	HydroChrono
+# target_include_directories(
+	# HydroChrono
 
-	PUBLIC
-	$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:include>
-	${CHRONO_INCLUDE_DIRS}
+	# PUBLIC
+	# $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+	# $<INSTALL_INTERFACE:include>
+	# ${CHRONO_INCLUDE_DIRS}
 
-	PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}/
-	${CMAKE_CURRENT_SOURCE_DIR}/include
-	${HDF5_INCLUDE_DIRS}
+	# PRIVATE
+	# ${CMAKE_CURRENT_SOURCE_DIR}/
+	# ${CMAKE_CURRENT_SOURCE_DIR}/include
+	# ${HDF5_INCLUDE_DIRS}
+# )
+
+target_include_directories(HydroChrono
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${HC_CHRONO_INCLUDE_DIRS}     # <— ensures chrono/ headers are visible
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${HDF5_INCLUDE_DIRS}
 )
 
 target_compile_definitions(HydroChrono
@@ -182,12 +226,18 @@ set_target_properties(HydroChrono
 	POSITION_INDEPENDENT_CODE ON
 )
 
-target_link_libraries(HydroChrono 
-	PUBLIC
-		${CHRONO_LIBRARIES}		
-	PRIVATE
-		${HDF5_LIBRARIES}
+target_link_libraries(HydroChrono
+  PUBLIC
+    ${CHRONO_TARGETS}             # Chrono::Chrono_core;Chrono::Chrono_irrlicht;...
+    $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
+  PRIVATE
+    ${HDF5_LIBRARIES}
 )
+
+# If Eigen is module-mode (no imported target), include its dir
+if (NOT TARGET Eigen3::Eigen AND DEFINED EIGEN3_INCLUDE_DIR)
+  target_include_directories(HydroChrono PUBLIC ${EIGEN3_INCLUDE_DIR})
+endif()
 
 # ====================
 # Irrlicht GUI helper
@@ -205,13 +255,11 @@ target_sources(
 target_compile_features(HydroChronoGUI PUBLIC cxx_std_17)
 
 
-target_include_directories(
-	HydroChronoGUI
-
-	PUBLIC
-		$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-		$<INSTALL_INTERFACE:include>
-		${CHRONO_INCLUDE_DIRS}
+target_include_directories(HydroChronoGUI
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${HC_CHRONO_INCLUDE_DIRS}
 )
 
 target_compile_options(HydroChronoGUI BEFORE
@@ -225,9 +273,14 @@ target_link_options(HydroChronoGUI BEFORE
 )
 
 target_link_libraries(HydroChronoGUI
-	PRIVATE
-		${CHRONO_LIBRARIES}
+  PUBLIC
+    ${CHRONO_TARGETS}
+    $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
 )
+
+if (NOT TARGET Eigen3::Eigen AND DEFINED EIGEN3_INCLUDE_DIR)
+  target_include_directories(HydroChronoGUI PUBLIC ${EIGEN3_INCLUDE_DIR})
+endif()
 
 
 

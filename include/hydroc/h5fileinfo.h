@@ -55,6 +55,7 @@ class HydroData {
     };
     struct RegularWaveInfo {
         Eigen::VectorXd freq_list;
+        Eigen::VectorXd wave_direction_list;
         Eigen::Tensor<double, 3> excitation_mag_matrix;
         Eigen::Tensor<double, 3> excitation_phase_matrix;
     };
@@ -64,11 +65,12 @@ class HydroData {
         // Eigen::Tensor<double, 3> excitation_im_matrix;
         // Eigen::Vector3i im_dims;
         Eigen::VectorXd excitation_irf_time;
-        Eigen::MatrixXd excitation_irf_matrix;  // TODO needs to be tensor?
+        Eigen::Tensor<double, 3> excitation_irf_matrix;
 
         // see std::optional documentation for how to use
         std::optional<Eigen::MatrixXd> excitation_irf_resampled;  // TODO needs to be tensor?
         std::optional<Eigen::MatrixXd> excitation_irf_time_resampled;
+        Eigen::VectorXd wave_direction_list;
     };
 
   private:

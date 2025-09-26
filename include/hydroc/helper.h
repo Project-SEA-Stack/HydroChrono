@@ -112,6 +112,54 @@ void inline WriteContainerToFile<Eigen::VectorXd>(const Eigen::VectorXd& contain
     output_file.close();
 };
 
+
+/// <summary>
+/// Performs bilinear interpolation on a 3D matrix along the wave direction and frequency axes.
+/// This is used to interpolate a scalar value (e.g., excitation magnitude or phase)
+/// at a given wave direction and frequency index between grid points.
+/// </summary>
+/// <typeparam name="MatrixGetter">
+/// A callable that takes three integers (i, j, k) and returns the matrix value at that location.
+/// </typeparam>
+/// <param name="get_val">Function or lambda used to access elements of the 3D matrix.</param>
+/// <param name="i">Index of the degree of freedom (DOF) or row in the matrix.</param>
+/// <param name="omega_dir_input">Continuous wave direction index (used for interpolation along direction axis).</param>
+/// <param name="freq_index_des">Continuous frequency index (used for interpolation along frequency axis).</param>
+/// <param name="num_dirs">Total number of discrete wave direction entries in the matrix.</param>
+/// <param name="num_freqs">Total number of discrete frequency entries in the matrix.</param>
+/// <returns>Interpolated scalar value at the specified DOF, direction, and frequency.</returns>
+template <typename MatrixGetter>
+double BilinearInterp3D(const MatrixGetter& get_val,
+                        int i,
+                        double dir_index_des,
+                        double freq_index_des,
+                        int num_dirs,
+                        int num_freqs) {
+    int freq_floor    = static_cast<int>(std::floor(freq_index_des));
+    int freq_ceil     = freq_floor + 1;
+    double freq_alpha = freq_index_des - freq_floor;
+
+    int dir_floor    = static_cast<int>(std::floor(dir_index_des));
+    int dir_ceil     = dir_floor + 1;
+    double dir_alpha = dir_index_des - dir_floor;
+
+    // Clamp to valid index ranges
+    freq_floor = std::max(0, std::min(freq_floor, num_freqs - 2));
+    freq_ceil  = freq_floor + 1;
+
+    dir_floor = std::max(0, std::min(dir_floor, num_dirs - 2));
+    dir_ceil  = dir_floor + 1;
+
+    // Access values
+    double v00 = get_val(i, dir_floor, freq_floor);
+    double v10 = get_val(i, dir_ceil, freq_floor);
+    double v01 = get_val(i, dir_floor, freq_ceil);
+    double v11 = get_val(i, dir_ceil, freq_ceil);
+
+    return (1 - freq_alpha) * (1 - dir_alpha) * v00 + (1 - freq_alpha) * dir_alpha * v10 +
+           freq_alpha * (1 - dir_alpha) * v01 + freq_alpha * dir_alpha * v11;
+}
+
 }  // end namespace hydroc
 
 #endif

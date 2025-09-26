@@ -7,6 +7,7 @@
  * @brief header file for Wavebase and classes inheriting from WaveBase.
  *********************************************************************/
 #pragma once
+
 #include <hydroc/h5fileinfo.h>
 #include <Eigen/Dense>
 
@@ -78,6 +79,9 @@ class WaveBase {
     double g_ = 9.81;
     /// @brief Water depth
     double water_depth_ = 0.0;
+
+protected:
+    double GetInterpolatedDirectionIndex(const Eigen::VectorXd& dirs, double dir_input) const;
 };
 
 /**
@@ -165,6 +169,8 @@ class RegularWave : public WaveBase {
     double regular_wave_amplitude_;
     double regular_wave_omega_;
     double regular_wave_phase_ = 0.0;
+    double regular_wave_direction_ = 0.0;
+    double regular_wave_spread_    = 1;
 
     /**
      * @brief Initializes other member variables for timestep calculations later.
@@ -200,6 +206,8 @@ class RegularWave : public WaveBase {
      */
     double GetOmegaDelta() const;
 
+    double GetInterpolatedDirectionIndex(double dir_input) const;
+
     /**
      * @brief gets interpolated excitation magnitude value.
      *
@@ -212,7 +220,8 @@ class RegularWave : public WaveBase {
      *
      * @return excitation magnitudes for body b, row i, column j, frequency ix k
      */
-    double GetExcitationMagInterp(int b, int i, int j, double freq_index_des) const;
+    //double GetExcitationMagInterp(int b, int i, int j, double freq_index_des) const;
+    double GetExcitationMagInterp(int b, int i, double dir_index_des, double freq_index_des) const;
 
     /**
      * @brief gets interpolated excitation phase value.
@@ -226,7 +235,8 @@ class RegularWave : public WaveBase {
      *
      * @return excitation phases for body b, row i, column j, frequency ix k
      */
-    double GetExcitationPhaseInterp(int b, int i, int j, double freq_index_des) const;
+    // double GetExcitationPhaseInterp(int b, int i, int j, double freq_index_des) const;
+    double GetExcitationPhaseInterp(int b, int i, double dir_index_des, double freq_index_des) const;
 };
 
 //// class to instantiate WaveBase for irregular waves
@@ -284,11 +294,13 @@ struct IrregularWaveParams {
     double wave_period_             = 0.0;
     double frequency_min_           = 0.001;
     double frequency_max_           = 1.0;
-    double nfrequencies_            = 0;
+    int nfrequencies_               = 0;
     double peak_enhancement_factor_ = 1.0;
     bool is_normalized_             = false;
     int seed_                       = 1;
     bool wave_stretching_           = true;
+    std::vector<double> wave_direction_ = {0.0};  
+    std::vector<double> wave_spread_    = {1.0};  
 };
 
 class IrregularWaves : public WaveBase {
@@ -298,7 +310,7 @@ class IrregularWaves : public WaveBase {
 
     void CreateSpectrum();
     std::vector<double> GetSpectrum();
-    std::vector<double> GetFreeSurfaceElevation();
+    Eigen::MatrixXd GetFreeSurfaceElevation();
     std::vector<double> GetEtaTimeData();
 
     Eigen::VectorXd GetForceAtTime(double t) override;
@@ -378,7 +390,8 @@ class IrregularWaves : public WaveBase {
     IrregularWaveParams params_;
     std::vector<double> spectrum_;
     std::vector<double> time_data_;
-    std::vector<double> free_surface_elevation_sampled_;
+    // std::vector<double> free_surface_elevation_sampled_;
+    Eigen::MatrixXd free_surface_elevation_sampled_;
     std::vector<double> free_surface_time_sampled_;
     bool spectrumCreated_;
 
@@ -386,21 +399,21 @@ class IrregularWaves : public WaveBase {
     // unsigned int num_bodies_;
     // const WaveMode mode_ = WaveMode::irregular;
     std::vector<HydroData::IrregularWaveInfo> wave_info_;
-    std::vector<Eigen::MatrixXd> ex_irf_sampled_;
+    std::vector<Eigen::Tensor<double, 3>> ex_irf_sampled_;
     std::vector<Eigen::VectorXd> ex_irf_time_sampled_;
     std::vector<Eigen::VectorXd> ex_irf_width_sampled_;
     Eigen::VectorXd spectrum_frequencies_;
     Eigen::VectorXd spectral_densities_;
     Eigen::VectorXd spectral_widths_;
     Eigen::VectorXd wavenumbers_;
-    Eigen::VectorXd wave_phases_;
+    Eigen::MatrixXd wave_phases_;
     std::string mesh_file_name_;
 
     void InitializeIRFVectors();
     void ReadEtaFromFile();
     void CreateFreeSurfaceElevation();
 
-    Eigen::MatrixXd GetExcitationIRF(int b) const;
+    Eigen::Tensor<double, 3> GetExcitationIRF(int b) const;
 
     /** @brief Resamples IRF time, widths, and values.
      *

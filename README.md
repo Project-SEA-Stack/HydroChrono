@@ -27,52 +27,74 @@ Visit the [HydroChrono website](https://nrel.github.io/HydroChrono/) for informa
 
 ### Prerequisites
 
-- CMake 3.16 or higher
-- A C++ compiler (Visual Studio 2019 or higher, or GCC through MinGW/MSYS2)
-- Project Chrono (built from source, tested with v9.0.0 and v9.0.1)
-- HDF5 1.10.8 or higher
-- Python 3.8 or higher (with numpy and matplotlib)
+- **Visual Studio 2022** with C++ toolchain
+- **CMake 3.18+**
+- **Project Chrono** (built from source; tested v9.0.0–v9.0.1)
+- **HDF5 1.10.8+**
+- **Eigen 3.4+** (header-only unzip is fine)
+- **Irrlicht 1.8.x** (optional but required for GUI helper)
+- **Python 3.8+** (only for docs/tools)
 
-### Building from Source
+### Building from Source (using `build-config.json` + script)
 
-1. Clone the repository:
-```powershell
-git clone https://github.com/NREL/HydroChrono.git
-cd HydroChrono
-```
+1. **Clone the repository**
+   ```powershell
+   git clone https://github.com/NREL/HydroChrono.git
+   cd HydroChrono
+   ```
 
-2. Create a build directory and navigate to it:
-```powershell
-mkdir build
-cd build
-```
+2. **Create your local config from the example**
+   ```powershell
+   copy build-config.example.json build-config.json
+   ```
 
-3. Configure and build the project:
-```powershell
-cmake .. -DChrono_DIR="<path_to_chrono_build>/cmake" -DHDF5_DIR="<path_to_hdf5_cmake>" -DPython3_ROOT_DIR="<path_to_python>"
-cmake --build . --config Release
-```
+3. **Edit `build-config.json`** and set paths for your machine
 
-4. Run the tests:
-```powershell
-ctest -C Release --output-on-failure
-```
+   **Example:**
+   ```json
+   {
+     "ChronoDir": "C:/path/to/chrono/build/cmake",
+     "Hdf5Dir": "C:/path/to/hdf5/share/cmake",
+     "EigenDir": "C:/path/to/eigen-3.4.0",
+     "IrrlichtDir": "C:/path/to/irrlicht-1.8.4",
+     "PythonRoot": "C:/Users/<you>/.conda/envs/<env>",
+     "CMakeModulePath": "C:/path/to/chrono/build/cmake"
+   }
+   ```
 
-### Clean Build
+4. **Build (from repo root)**
 
-To perform a clean rebuild of the project:
-```powershell
-# From the project root
-Remove-Item -Recurse -Force build
-mkdir build
-cd build
-```
+   - Clean configure + build (default `Release`):
+     ```powershell
+     .\quick-build.ps1 -Clean
+     ```
+   - Build a different configuration (e.g., `Debug`):
+     ```powershell
+     .\quick-build.ps1 -BuildType Debug
+     ```
 
-### Post-Build Steps
+4. **Post-Build Steps**
 
-Copy the following DLL files from your Chrono build directory to your build directory's `demos/Release` folder:
+Copy the following DLL files from your Chrono build directory to your build directory's `build/bin` folder:
 - ChronoEngine.dll
 - ChronoEngine_irrlicht.dll (if using Irrlicht)
 - Irrlicht.dll (if using Irrlicht)
 
-For detailed build instructions, including Visual Studio setup and running demos, see the [developer documentation](https://nrel.github.io/HydroChrono/developer_docs/build_instructions.html).
+5. **Run the tests**
+   ```powershell
+   cd build
+   ctest -C Release
+   ```
+
+---
+
+### Clean Build
+
+```powershell
+# From the project root
+Remove-Item -Recurse -Force build
+# then reconfigure/build
+.\quick-build.ps1 -Clean
+```
+
+For more detailed build instructions, including Visual Studio setup and running demos, see the [developer documentation](https://nrel.github.io/HydroChrono/developer_docs/build_instructions.html).

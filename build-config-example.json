@@ -1,0 +1,13 @@
+{
+  "ChronoDir": "C:/path/to/chrono/build/cmake",
+  "Hdf5Dir": "C:/path/to/hdf5/share/cmake",
+  "EigenDir": "C:/path/to/eigen-3.4.0",
+  "IrrlichtDir": "C:/path/to/irrlicht-1.8.4",
+  "PythonRoot": "C:/Users/<you>/.conda/envs/<env>",
+  "ScriptVersion": "2.1",
+  "DefaultBuildType": "Release",
+  "DefaultYamlRunner": "ON",
+  "VisualStudioPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC",
+  "RuntimeLibrary": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+  "CMakeModulePath": "C:/path/to/chrono/build/cmake"
+}

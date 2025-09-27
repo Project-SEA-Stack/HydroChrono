@@ -1,7 +1,6 @@
 # IDE Specific
 .vs/
 *.launch
-*.json
 .editorconfig
 
 # Compiled source
@@ -50,3 +49,8 @@ demos/F3OF/f3of/
 sandbox/
 Testing/Temporary/CTestCostData.txt
 Testing/Temporary/LastTest.log
+
+# Test results (ignore all results/ directories)
+results/
+**/results/
+build-config.json

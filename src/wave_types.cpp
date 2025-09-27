@@ -5,7 +5,11 @@
  *********************************************************************/
 #include <hydroc/helper.h>
 #include <hydroc/wave_types.h>
+#include <hydroc/logging.h>
 #include <unsupported/Eigen/Splines>
+#include <iostream>
+#include <iomanip>
+
 
 double GetEta(const Eigen::Vector3d& position,
               double time,
@@ -155,31 +159,98 @@ Eigen::Vector3d GetWaterAccelerationIrregular(const Eigen::Vector3d& position,
     return water_acceleration;
 }
 
-double ComputeWaveNumber(double omega,
-                         double water_depth,
-                         double g,
-                         double tolerance   = 1e-6,
-                         int max_iterations = 100) {
-    if (water_depth <= 0.0) {
-        throw std::runtime_error("Cannot compute wavenumber with water depth: " + std::to_string(water_depth) + ".");
+/**
+ * Computes the wave number for a given angular frequency and water depth.
+ * 
+ * This function calculates the wave number using the dispersion relation for water waves.
+ * If the water depth is effectively infinite (zero, greater than 1000.0, or infinity),
+ * it uses the deep water approximation: k = omega^2 / g.
+ * Otherwise, it iteratively solves the dispersion relation using Newton's method.
+ * 
+ * @param omega Angular frequency of the wave (must be positive).
+ * @param water_depth Depth of the water (must be non-negative).
+ * @param g Acceleration due to gravity (must be positive).
+ * @param tolerance Tolerance for the iterative solution (must be positive).
+ * @param max_iterations Maximum number of iterations for the iterative solution.
+ * @return The computed wave number.
+ * @throws std::runtime_error if any input parameter is invalid.
+ */
+double ComputeWaveNumber(double omega, double water_depth, double g, 
+                        double tolerance = 1e-6, 
+                        int max_iterations = 100) {
+    // Constants specific to wave number calculation
+    constexpr double DEEP_WATER_THRESHOLD = 1000.0;  // Water depth threshold for deep water approximation
+
+    LOG_DEBUG("Computing wave number for omega=" << omega << ", water_depth=" << water_depth << ", g=" << g);
+
+    // Validate input parameters
+    if (omega <= 0.0) {
+        LOG_ERROR("Invalid angular frequency: " << omega);
+        throw std::runtime_error("Angular frequency must be positive.");
+    }
+    if (water_depth < 0.0) {
+        LOG_ERROR("Invalid water depth: " << water_depth);
+        throw std::runtime_error("Water depth cannot be negative.");
+    }
+    if (g <= 0.0) {
+        LOG_ERROR("Invalid gravity: " << g);
+        throw std::runtime_error("Gravity must be positive.");
+    }
+    if (tolerance <= 0.0) {
+        LOG_ERROR("Invalid tolerance: " << tolerance);
+        throw std::runtime_error("Tolerance must be positive.");
+    }
+    if (max_iterations <= 0) {
+        LOG_ERROR("Invalid max iterations: " << max_iterations);
+        throw std::runtime_error("Maximum iterations must be positive.");
     }
 
-    // Initial guess for wave number (using deep water approximation)
+    // Use deep water approximation if water depth is effectively infinite
+    if (water_depth == 0.0 || water_depth > DEEP_WATER_THRESHOLD || std::isinf(water_depth)) {
+        LOG_DEBUG("Using deep water approximation");
+        return omega * omega / g;
+    }
+
+    // Initial guess for wave number using deep water approximation
     double k = omega * omega / g;
+    LOG_DEBUG("Initial wave number guess: " << k);
 
+    // Iteratively solve the dispersion relation using Newton's method
     int iterations = 0;
-    double error   = 1.0;
+    double error = 1.0;
     while (error > tolerance && iterations < max_iterations) {
+        // Calculate the hyperbolic tangent of k * water_depth
         double tanh_kh = std::tanh(k * water_depth);
-        double f       = omega * omega - g * k * tanh_kh;
-        double df      = -2.0 * g * tanh_kh - g * k * water_depth * (1.0 - tanh_kh * tanh_kh);
+        // Calculate the function value: f(k) = omega^2 - g * k * tanh(k * h)
+        double f = omega * omega - g * k * tanh_kh;
+        // Calculate the derivative of f(k) with respect to k
+        double df = -2.0 * g * tanh_kh - g * k * water_depth * (1.0 - tanh_kh * tanh_kh);
 
+        LOG_TRACE("Iteration " << iterations << ": k=" << k << ", f=" << f << ", df=" << df);
+
+        // Check for potential division by zero
+        if (std::abs(df) < tolerance) {
+            LOG_ERROR("Numerical instability: derivative too close to zero (df=" << df << ")");
+            throw std::runtime_error("Numerical instability: derivative too close to zero.");
+        }
+
+        // Update k using Newton's method: k_new = k_old - f(k_old) / f'(k_old)
         double delta_k = f / df;
         k -= delta_k;
+        // Calculate the error as the absolute change in k
         error = std::abs(delta_k);
         iterations++;
+
+        LOG_DEBUG("Iteration " << iterations << " complete: k=" << k << ", error=" << error);
     }
 
+    // Check if we reached maximum iterations without convergence
+    if (iterations >= max_iterations) {
+        LOG_ERROR("Failed to converge after " << iterations << " iterations (final error=" << error << ")");
+        throw std::runtime_error("Failed to converge within maximum iterations.");
+    }
+
+    LOG_DEBUG("Wave number computation complete: k=" << k << " (" << iterations << " iterations)");
     return k;
 }
 
@@ -204,8 +275,7 @@ void RegularWave::Initialize() {
     wavenumber_ = ComputeWaveNumber(regular_wave_omega_, water_depth_, g_);
 }
 
-void RegularWave::AddH5Data(std::vector<HydroData::RegularWaveInfo>& reg_h5_data,
-                            HydroData::SimulationParameters& sim_data) {
+void RegularWave::AddH5Data(std::vector<HydroData::RegularWaveInfo>& reg_h5_data, HydroData::SimulationParameters& sim_data) {
     wave_info_   = reg_h5_data;
     water_depth_ = sim_data.water_depth;
     g_           = sim_data.g;
@@ -318,7 +388,6 @@ std::vector<std::array<size_t, 3>> CreateFreeSurfaceTriangles(size_t eta_size) {
 
     return triangles;
 }
-#include <iomanip>
 
 void WriteFreeSurfaceMeshObj(const std::vector<std::array<double, 3>>& points,
                              const std::vector<std::array<size_t, 3>>& triangles,

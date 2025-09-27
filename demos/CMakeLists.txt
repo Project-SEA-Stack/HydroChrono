@@ -1,42 +1,41 @@
-# =====================
-# SPHERE_DECAY
-# =====================
-add_executable(demo_sphere_decay)
+# # =====================
+# # SPHERE_DECAY
+# # =====================
+# add_executable(demo_sphere_decay)
+# 
+# target_sources(
+#     demo_sphere_decay
+# 
+#     PRIVATE
+#         sphere/demo_sphere_decay.cpp
+# )
+# 
+# if(HYDROCHRONO_ENABLE_IRRLICHT)
+# 	target_compile_definitions(demo_sphere_decay 
+# 		PRIVATE 
+# 		HYDROCHRONO_HAVE_IRRLICHT=1
+# 		"CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\""
+# 	)
+# endif()
+# 
+# target_include_directories(
+# 	demo_sphere_decay
+# 
+# 	PRIVATE
+# 	    ${CMAKE_CURRENT_SOURCE_DIR}/
+# 	    ${CMAKE_CURRENT_SOURCE_DIR}/include
+# )
+# 
+# target_link_libraries(demo_sphere_decay 
+# 	PRIVATE
+# 	HydroChronoGUI
+# 	HydroChrono
+# 	
+# )
 
-target_sources(
-    demo_sphere_decay
-
-    PRIVATE
-        sphere/demo_sphere_decay.cpp
-)
-
-if(HYDROCHRONO_ENABLE_IRRLICHT)
-	target_compile_definitions(demo_sphere_decay 
-		PRIVATE 
-		HYDROCHRONO_HAVE_IRRLICHT=1
-		"CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\""
-	)
-endif()
-
-target_include_directories(
-	demo_sphere_decay
-
-	PRIVATE
-	    ${CMAKE_CURRENT_SOURCE_DIR}/
-	    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(demo_sphere_decay 
-	PRIVATE
-	HydroChronoGUI
-	HydroChrono
-	
-)
-
-
-# =====================
-# SPHERE_REG_WAVES
-# =====================
+# =====================
+# SPHERE_REG_WAVES
+# =====================
 add_executable(demo_sphere_reg_waves)
 
 target_sources(
@@ -68,10 +67,10 @@ target_link_libraries(demo_sphere_reg_waves
 )
 
 
-# =====================
-# SPHERE_IRREG_WAVES
+# =====================
+# SPHERE_IRREG_WAVES
 
-# =====================
+# =====================
 add_executable(demo_sphere_irreg_waves)
 
 target_sources(
@@ -102,10 +101,10 @@ target_link_libraries(demo_sphere_irreg_waves
     HydroChrono
 )
 
-# =====================
-# SPHERE_IRREG_WAVES_ETA_IMPORT
+# =====================
+# SPHERE_IRREG_WAVES_ETA_IMPORT
 
-# =====================
+# =====================
 add_executable(demo_sphere_irreg_waves_eta_import)
 
 target_sources(
@@ -136,9 +135,9 @@ target_link_libraries(demo_sphere_irreg_waves_eta_import
     HydroChrono
 )
 
-# =====================
-# RM3_DECAY
-# =====================
+# =====================
+# RM3_DECAY
+# =====================
 add_executable(demo_rm3_decay)
 
 target_sources(
@@ -171,9 +170,9 @@ target_link_libraries(demo_rm3_decay
 )
 
 
-# =====================
-# RM3_REG_WAVES
-# =====================
+# =====================
+# RM3_REG_WAVES
+# =====================
 add_executable(demo_rm3_reg_waves)
 
 target_sources(
@@ -206,9 +205,9 @@ target_link_libraries(demo_rm3_reg_waves
 )
 
 
-# =====================
-# OSWEC_DECAY
-# =====================
+# =====================
+# OSWEC_DECAY
+# =====================
 add_executable(demo_oswec_decay)
 
 target_sources(
@@ -240,9 +239,9 @@ target_link_libraries(demo_oswec_decay
     HydroChrono
 )
 
-# =====================
-# OSWEC_REG_WAVES
-# =====================
+# =====================
+# OSWEC_REG_WAVES
+# =====================
 add_executable(demo_oswec_reg_waves)
 
 target_sources(
@@ -274,9 +273,9 @@ target_link_libraries(demo_oswec_reg_waves
     HydroChrono
 )
 
-# =====================
-# F3OF DT 1
-# =====================
+# =====================
+# F3OF DT 1
+# =====================
 add_executable(demo_f3of_DT1)
 
 target_sources(
@@ -308,9 +307,9 @@ target_link_libraries(demo_f3of_DT1
     HydroChrono
 )
 
-# =====================
-# F3OF DT 2
-# =====================
+# =====================
+# F3OF DT 2
+# =====================
 add_executable(demo_f3of_DT2)
 
 target_sources(
@@ -341,9 +340,9 @@ target_link_libraries(demo_f3of_DT2
 	HydroChronoGUI	
     HydroChrono
 )
-# =====================
-# F3OF DT 3
-# =====================
+# =====================
+# F3OF DT 3
+# =====================
 add_executable(demo_f3of_DT3)
 
 target_sources(
@@ -375,9 +374,9 @@ target_link_libraries(demo_f3of_DT3
     HydroChrono
 )
 
-# =====================
-# DeepCWind
-# =====================
+# =====================
+# DeepCWind
+# =====================
 add_executable(demo_DeepCWind_decay)
 
 target_sources(

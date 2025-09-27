@@ -1,6 +1,7 @@
 #include <hydroc/gui/guihelper.h>
 #include <hydroc/helper.h>
 #include <hydroc/hydro_forces.h>
+#include <hydroc/logging.h>
 
 #include <chrono/core/ChRealtimeStep.h>
 
@@ -11,7 +12,7 @@
 // Use the namespaces of Chrono
 using namespace chrono;
 
-// usage: ./<demos>.exe [DATADIR] [--nogui]
+// usage: ./<demos>.exe [DATADIR] [--nogui] [--debug]
 //
 // If no argument is given user can set HYDROCHRONO_DATA_DIR
 // environment variable to give the data_directory.
@@ -21,22 +22,38 @@ int main(int argc, char* argv[]) {
 
     SetChronoDataPath(CHRONO_DATA_DIR);
 
+    // Initialize logging with command line arguments
+    hydroc::Logger::init_logging(argc, argv);
+
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
 
-    // Check if --nogui option is set as 2nd argument
+    // Check for --nogui and --debug flags in any order
     bool visualizationOn = true;
-    if (argc > 2 && std::string("--nogui").compare(argv[2]) == 0) {
-        visualizationOn = false;
+    for (int i = 1; i < argc; i++) {
+        if (std::string("--nogui").compare(argv[i]) == 0) {
+            visualizationOn = false;
+            break;
+        }
     }
 
     // Get model file names
     std::filesystem::path DATADIR(hydroc::getDataDir());
+    if (DATADIR.empty()) {
+        std::cout << "Using default data directory: " << DATADIR << std::endl;
+    } else {
+        std::cout << "Using data directory from environment: " << DATADIR << std::endl;
+    }
 
     auto body1_meshfame = (DATADIR / "rm3" / "geometry" / "float_cog.obj").lexically_normal().generic_string();
     auto body2_meshfame = (DATADIR / "rm3" / "geometry" / "plate_cog.obj").lexically_normal().generic_string();
     auto h5fname        = (DATADIR / "rm3" / "hydroData" / "rm3.h5").lexically_normal().generic_string();
+
+    std::cout << "Looking for mesh files in:" << std::endl;
+    std::cout << "  body1: " << body1_meshfame << std::endl;
+    std::cout << "  body2: " << body2_meshfame << std::endl;
+    std::cout << "  h5: " << h5fname << std::endl;
 
     // system/solver settings
     ChSystemNSC system;
@@ -119,15 +136,16 @@ int main(int argc, char* argv[]) {
     prismatic_pto->SetDampingCoefficient(0.0);
     system.AddLink(prismatic_pto);
 
-    // define wave parameters
-    auto my_hydro_inputs                     = std::make_shared<RegularWave>();
-    my_hydro_inputs->regular_wave_amplitude_ = 1.0;
-    my_hydro_inputs->regular_wave_omega_     = 2.10;
-
     // attach hydrodynamic forces to body
     std::vector<std::shared_ptr<ChBody>> bodies;
     bodies.push_back(float_body1);
     bodies.push_back(plate_body2);
+
+    // define wave parameters
+    auto my_hydro_inputs = std::make_shared<RegularWave>(static_cast<unsigned int>(bodies.size()));
+    my_hydro_inputs->regular_wave_amplitude_ = 1.0;
+    my_hydro_inputs->regular_wave_omega_     = 2.10;
+
     TestHydro hydro_forces(bodies, h5fname);
     hydro_forces.AddWaves(my_hydro_inputs);
 
@@ -176,20 +194,19 @@ int main(int argc, char* argv[]) {
     }
 
     if (saveDataOn) {
+        // Create results directory if it doesn't exist
+        if (!std::filesystem::exists("./results")) {
+            std::cout << "Creating results directory..." << std::endl;
+            std::filesystem::create_directory("./results");
+        }
+
         std::ofstream outputFile;
         outputFile.open("./results/rm3_reg_waves.txt");
         if (!outputFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directory("./results");
-                outputFile.open("./results/rm3_decay.txt");
-                if (!outputFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
+            std::cout << "Failed to open output file for writing" << std::endl;
+            return 1;
         }
+        
         outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(16) << "Float Heave (m)"
                    << std::right << std::setw(16) << "Plate Heave (m)" << std::right << std::setw(16)
                    << "Float Drift (x) (m)" << std::endl;

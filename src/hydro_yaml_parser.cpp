@@ -262,9 +262,11 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         // - Body properties at indent == 6
         // - Wave properties at indent == 4
         // - Nested period block under waves at indent >= period_block_indent + 2 when in_period_block
-        if ((in_body && indent == 6) || (in_waves && (indent == 4 || (in_period_block && indent >= period_block_indent + 2))) || (in_moordyn && indent == 4)) {
-            std::string key, value;
-            if (ParseYAMLLine(line, key, value)) {
+        {
+            std::string key;
+            std::string value;
+            bool should_parse = ( (in_body && indent == 6) || (in_waves && (indent == 4 || (in_period_block && indent >= period_block_indent + 2))) );
+            if (should_parse && ParseYAMLLine(line, key, value)) {
                 if (in_body) {
                     // Parse body properties
                     if (key == "name") {
@@ -318,18 +320,21 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     } else if (in_period_block && key == "values") {
                         // period:\n  values: [a, b, c]
                         auto lb = value.find('['); auto rb = value.find(']');
-                        if (lb == std::string::npos || rb == std::string::npos || rb <= lb) continue;
-                        std::string inner = value.substr(lb + 1, rb - lb - 1);
-                        for (char& ch : inner) if (ch == ',') ch = ' ';
-                        std::istringstream iss(inner);
-                        double v; data.waves.period_values.clear();
-                        while (iss >> v) data.waves.period_values.push_back(v);
-                        if (!data.waves.period_values.empty()) {
-                            data.waves.period = data.waves.period_values.front();
-                            if (period_form_linspace || period_form_range) {
-                                throw std::runtime_error("waves.period: multiple forms specified (values + other)");
+                        if (lb == std::string::npos || rb == std::string::npos || rb <= lb) {
+                            // invalid list, ignore
+                        } else {
+                            std::string inner = value.substr(lb + 1, rb - lb - 1);
+                            for (char& ch : inner) if (ch == ',') ch = ' ';
+                            std::istringstream iss(inner);
+                            double v; data.waves.period_values.clear();
+                            while (iss >> v) data.waves.period_values.push_back(v);
+                            if (!data.waves.period_values.empty()) {
+                                data.waves.period = data.waves.period_values.front();
+                                if (period_form_linspace || period_form_range) {
+                                    throw std::runtime_error("waves.period: multiple forms specified (values + other)");
+                                }
+                                period_form_values = true;
                             }
-                            period_form_values = true;
                         }
                     } else if (in_period_block && key == "linspace") {
                         // linspace: { start: a, stop: b, num: n }
@@ -405,14 +410,13 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     } else if (!in_period_block && key == "seed") {
                         try { data.waves.seed = std::stoi(value); } catch (...) { data.waves.seed = -1; }
                     }
-                    }
                 }
             }
+        }
             // Detect leaving the period block when indentation reduces back to waves level
-            if (in_period_block && indent <= period_block_indent && key != "period") {
+            if (in_period_block && indent <= period_block_indent) {
                 in_period_block = false;
             }
-        }
     }
     
     // Don't forget to add the last body

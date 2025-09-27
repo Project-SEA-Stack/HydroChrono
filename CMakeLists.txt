@@ -27,34 +27,46 @@ project(HydroChrono
 # ─── 2.1. Parse Project Metadata ──────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Read and parse project.meta file
-file(READ "${CMAKE_SOURCE_DIR}/project.meta" PROJECT_META_CONTENT)
-string(REPLACE "\n" ";" PROJECT_META_LINES "${PROJECT_META_CONTENT}")
+# Read and parse project.meta file if present; otherwise provide sensible defaults
+if(EXISTS "${CMAKE_SOURCE_DIR}/project.meta")
+    file(READ "${CMAKE_SOURCE_DIR}/project.meta" PROJECT_META_CONTENT)
+    string(REPLACE "\n" ";" PROJECT_META_LINES "${PROJECT_META_CONTENT}")
 
-# Parse each line and extract key-value pairs
-foreach(line ${PROJECT_META_LINES})
-    if(line MATCHES "^([^=]+)=([^=]+)$")
-        string(STRIP "${CMAKE_MATCH_1}" key)
-        string(STRIP "${CMAKE_MATCH_2}" value)
-        if(key STREQUAL "name")
-            set(HYDROCHRONO_NAME "${value}")
-        elseif(key STREQUAL "version")
-            set(HYDROCHRONO_VERSION "${value}")
-        elseif(key STREQUAL "description")
-            set(HYDROCHRONO_DESCRIPTION "${value}")
-        elseif(key STREQUAL "author")
-            set(HYDROCHRONO_AUTHOR "${value}")
-        elseif(key STREQUAL "maintainer")
-            set(HYDROCHRONO_MAINTAINER "${value}")
-        elseif(key STREQUAL "url")
-            set(HYDROCHRONO_URL "${value}")
-        elseif(key STREQUAL "license")
-            set(HYDROCHRONO_LICENSE "${value}")
-        elseif(key STREQUAL "status")
-            set(HYDROCHRONO_STATUS "${value}")
+    # Parse each line and extract key-value pairs
+    foreach(line ${PROJECT_META_LINES})
+        if(line MATCHES "^([^=]+)=([^=]+)$")
+            string(STRIP "${CMAKE_MATCH_1}" key)
+            string(STRIP "${CMAKE_MATCH_2}" value)
+            if(key STREQUAL "name")
+                set(HYDROCHRONO_NAME "${value}")
+            elseif(key STREQUAL "version")
+                set(HYDROCHRONO_VERSION "${value}")
+            elseif(key STREQUAL "description")
+                set(HYDROCHRONO_DESCRIPTION "${value}")
+            elseif(key STREQUAL "author")
+                set(HYDROCHRONO_AUTHOR "${value}")
+            elseif(key STREQUAL "maintainer")
+                set(HYDROCHRONO_MAINTAINER "${value}")
+            elseif(key STREQUAL "url")
+                set(HYDROCHRONO_URL "${value}")
+            elseif(key STREQUAL "license")
+                set(HYDROCHRONO_LICENSE "${value}")
+            elseif(key STREQUAL "status")
+                set(HYDROCHRONO_STATUS "${value}")
+            endif()
         endif()
-    endif()
-endforeach()
+    endforeach()
+else()
+    # Defaults when meta file is not present
+    set(HYDROCHRONO_NAME "${PROJECT_NAME}")
+    set(HYDROCHRONO_VERSION "${PROJECT_VERSION}")
+    set(HYDROCHRONO_DESCRIPTION "${PROJECT_DESCRIPTION}")
+    set(HYDROCHRONO_AUTHOR "")
+    set(HYDROCHRONO_MAINTAINER "")
+    set(HYDROCHRONO_URL "")
+    set(HYDROCHRONO_LICENSE "")
+    set(HYDROCHRONO_STATUS "")
+endif()
 
 # Display parsed metadata
 message(STATUS "Project: ${HYDROCHRONO_NAME} v${HYDROCHRONO_VERSION}")
@@ -295,6 +307,10 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
         PRIVATE
             ${PROJECT_SOURCE_DIR}/include
             ${PROJECT_SOURCE_DIR}/src/utils
+            # Fallback include paths for Chrono Parsers when using a build-tree Chrono_DIR
+            $<IF:$<BOOL:${Chrono_DIR}>,${Chrono_DIR}/../../install/include,>
+            $<IF:$<BOOL:${Chrono_DIR}>,${Chrono_DIR}/../include,>
+            $<IF:$<BOOL:${Chrono_DIR}>,${Chrono_DIR}/../../src,>
     )
 
     set_target_properties(run_hydrochrono PROPERTIES

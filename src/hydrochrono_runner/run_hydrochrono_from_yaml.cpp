@@ -5,7 +5,7 @@
 #include "../hydro_yaml_parser.h"
 #include <hydroc/hydro_forces.h>
 
-#include <chrono_parsers/ChParserYAML.h>
+#include <chrono_parsers/yaml/ChParserMbsYAML.h>
 #include <chrono/physics/ChSystem.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/core/ChRealtimeStep.h>
@@ -151,7 +151,7 @@ std::shared_ptr<chrono::ChSystem> InitializeChronoSystem(const std::string& mode
     
     try {
         hydroc::debug::LogDebug("Creating Chrono YAML parser");
-        auto parser = chrono::parsers::ChParserYAML();
+        auto parser = chrono::parsers::ChParserMbsYAML();
         
         hydroc::debug::LogDebug(std::string("Loading simulation file: ") + sim_file);
         parser.LoadSimulationFile(sim_file);
@@ -311,9 +311,9 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         log_cfg.enable_file_output = !log_file_path.empty();
         log_cfg.enable_debug_logging = debug_mode; // gate dev logs
         // Console threshold: Debug if --debug, else Info. File threshold: always Debug to capture details.
-        log_cfg.console_level = debug_mode ? hydroc::LoggingConfig::Level::Debug
-                                           : hydroc::LoggingConfig::Level::Info;
-        log_cfg.file_level = hydroc::LoggingConfig::Level::Debug;
+        log_cfg.console_level = debug_mode ? hydroc::LogLevel::Debug
+                                           : hydroc::LogLevel::Info;
+        log_cfg.file_level = hydroc::LogLevel::Debug;
         hydroc::Initialize(log_cfg);
         hydroc::cli::ShowBanner();
 

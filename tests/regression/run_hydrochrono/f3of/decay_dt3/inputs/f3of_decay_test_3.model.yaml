@@ -40,7 +40,7 @@ model:
 
     # Aft flap (body3), no initial pitch
     - name: body3
-      location: [12.5, 0.0, -5.553173865]
+      location: [12.5, 0.0, -5.5]
       orientation: [0.0, 0.0, 0.0]
       mass: 179250.0
       fixed: false

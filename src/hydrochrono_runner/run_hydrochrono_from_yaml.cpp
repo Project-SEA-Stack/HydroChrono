@@ -4,6 +4,7 @@
 #include "../setup_hydro_from_yaml.h"
 #include "../hydro_yaml_parser.h"
 #include <hydroc/hydro_forces.h>
+#include <hydroc/simulation_exporter.h>
 
 #include <chrono_parsers/yaml/ChParserMbsYAML.h>
 #include <chrono/physics/ChSystem.h>
@@ -53,6 +54,38 @@ static std::string FindFirstFile(const std::filesystem::path& directory, const s
     }
     
     return "";
+}
+
+// -----------------------------------------------------------------------------
+// Best-effort YAML probe: find a scalar double value for a given key (e.g., end_time)
+// Used only for CLI display; does not control simulation.
+// -----------------------------------------------------------------------------
+static bool TryFindYamlDouble(const std::string& yaml_path, const std::string& key, double& out_value) {
+    std::ifstream in(yaml_path);
+    if (!in.is_open()) {
+        return false;
+    }
+    auto ltrim = [](std::string& s) { s.erase(0, s.find_first_not_of(" \t\r\n")); };
+    auto rtrim = [](std::string& s) { size_t p = s.find_last_not_of(" \t\r\n"); if (p == std::string::npos) s.clear(); else s.erase(p + 1); };
+    std::string line;
+    while (std::getline(in, line)) {
+        ltrim(line); rtrim(line);
+        if (line.empty() || line[0] == '#') continue;
+        size_t pos = line.find(':');
+        if (pos == std::string::npos) continue;
+        std::string k = line.substr(0, pos);
+        std::string v = line.substr(pos + 1);
+        ltrim(k); rtrim(k); ltrim(v); rtrim(v);
+        if (k == key) {
+            try {
+                out_value = std::stod(v);
+                return true;
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+    return false;
 }
 
 // Helper functions for clean separation of concerns
@@ -186,8 +219,11 @@ void DisplaySimulationSummary(const std::string& input_directory,
                              const YAMLHydroData* hydro_data = nullptr) {
     
     // Get simulation parameters
-    double timestep = system->GetStep();
-    double time_end = 40.0;  // Default simulation duration
+    double timestep = 0.0;
+    // Prefer YAML-declared time_step for display; fallback to system value
+    if (!TryFindYamlDouble(sim_file, "time_step", timestep) || timestep <= 0.0) {
+        timestep = system->GetStep();
+    }
     int num_bodies = system->GetBodies().size();
     int num_constraints = system->GetLinks().size();
     int num_hydro_bodies = hydro_data ? hydro_data->bodies.size() : 0;
@@ -215,7 +251,10 @@ void DisplaySimulationSummary(const std::string& input_directory,
         summary_content.push_back(hydroc::cli::CreateAlignedLine("🌊", "Hydro Bodies", std::to_string(num_hydro_bodies)));
     }
     summary_content.push_back(hydroc::cli::CreateAlignedLine("🔗", "Constraints", std::to_string(num_constraints)));
-    summary_content.push_back(hydroc::cli::CreateAlignedLine("⏱️", "Duration", hydroc::FormatNumber(time_end, 1) + " s"));
+    double simulation_duration = 0.0;
+    if (TryFindYamlDouble(sim_file, "end_time", simulation_duration) && simulation_duration > 0.0) {
+        summary_content.push_back(hydroc::cli::CreateAlignedLine("⏱️", "Simulation Duration", hydroc::FormatNumber(simulation_duration, 1) + " s"));
+    }
     summary_content.push_back(hydroc::cli::CreateAlignedLine("⏱️", "Time Step", hydroc::FormatNumber(timestep, 3) + " s"));
     summary_content.push_back(hydroc::cli::CreateAlignedLine("🖥️", "GUI", nogui ? "Disabled" : "Enabled"));
     
@@ -349,8 +388,14 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         // ---------------------------------------------------------------------
         std::unique_ptr<TestHydro> test_hydro;
         YAMLHydroData hydro_data;
-        double timestep = system->GetStep();
-        double time_end = 40.0;  // Default simulation duration
+        // Prefer YAML-declared time_step for integration; fallback to system's step
+        double loop_dt = system->GetStep();
+        {
+            double yaml_dt = 0.0;
+            if (TryFindYamlDouble(sim_file, "time_step", yaml_dt) && yaml_dt > 0.0) {
+                loop_dt = yaml_dt;
+            }
+        }
         
         if (setup_config.has_hydro_file) {
             std::filesystem::path hydro_file = std::filesystem::path(input_directory) / setup_config.hydro_file;
@@ -372,7 +417,8 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     
                     // Setup hydrodynamic forces
                     hydroc::debug::LogDebug("Initializing TestHydro...");
-                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, timestep, time_end, 0.0);
+                    // Provide a neutral horizon (Chrono governs runtime via YAML/UI)
+                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, /*time_end_hint*/ 0.0, 0.0);
                     hydroc::debug::LogDebug("Hydrodynamic forces initialized successfully");
                     
                     // Display wave information to CLI with enhanced formatting
@@ -502,7 +548,7 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         std::vector<std::string> system_info_lines;
         system_info_lines.push_back(hydroc::cli::CreateAlignedLine("🔗", "Bodies", std::to_string(system->GetBodies().size())));
         system_info_lines.push_back(hydroc::cli::CreateAlignedLine("⚙️", "Constraints", std::to_string(system->GetLinks().size())));
-        system_info_lines.push_back(hydroc::cli::CreateAlignedLine("⏱️", "Time Step", hydroc::FormatNumber(timestep, 4) + " s"));
+        system_info_lines.push_back(hydroc::cli::CreateAlignedLine("⏱️", "Time Step", hydroc::FormatNumber(loop_dt, 4) + " s"));
         
         // Calculate approximate DOF (6 * num_bodies - constraint equations)
         int num_bodies = system->GetBodies().size();
@@ -543,12 +589,46 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         }
 
         // ---------------------------------------------------------------------
+        // 6.9. Optional HDF5 exporter: write outputs under setup-configured folder
+        // ---------------------------------------------------------------------
+        std::unique_ptr<hydroc::SimulationExporter> exporter;
+        std::filesystem::path resolved_output_dir;
+        if (setup_config.has_output_directory && !setup_config.output_directory.empty()) {
+            try {
+                resolved_output_dir = std::filesystem::path(input_directory) / setup_config.output_directory;
+                std::error_code ec;
+                std::filesystem::create_directories(resolved_output_dir, ec);
+
+                // Name output file based on wave type for predictability
+                std::string wave_type = hydro_data.waves.type.empty() ? std::string("still") : hydro_data.waves.type;
+                std::filesystem::path output_h5 = resolved_output_dir / (std::string("results.") + wave_type + ".h5");
+
+                hydroc::SimulationExporter::Options exp_opts;
+                exp_opts.output_path = output_h5.generic_string();
+                exp_opts.input_model_file = model_file;
+                exp_opts.input_simulation_file = sim_file;
+                if (setup_config.has_hydro_file) {
+                    exp_opts.input_hydro_file = (std::filesystem::path(input_directory) / setup_config.hydro_file).generic_string();
+                }
+                exp_opts.output_directory = resolved_output_dir.generic_string();
+                exp_opts.scenario_type = wave_type;
+                exporter = std::make_unique<hydroc::SimulationExporter>(exp_opts);
+
+                // Write static info and model before stepping
+                exporter->WriteSimulationInfo(system.get(), std::string(""), std::filesystem::path(model_file).filename().generic_string(), loop_dt, /*duration_seconds*/ 0.0);
+                exporter->WriteModel(system.get());
+                exporter->BeginResults(system.get(), /*expected_steps*/ 0);
+            } catch (const std::exception& e) {
+                hydroc::cli::LogWarning(std::string("HDF5 exporter disabled: ") + e.what());
+                exporter.reset();
+            }
+        }
+
+        // ---------------------------------------------------------------------
         // 7. Run simulation
         // ---------------------------------------------------------------------
         auto start_time = std::chrono::steady_clock::now();
         
-        // Initialize real-time timer for consistent pacing (matches demo behavior)
-        chrono::ChRealtimeStepTimer realtime_timer;
         
         // Log simulation loop entry
         hydroc::cli::LogInfo("🕒 Entering simulation loop...");
@@ -563,19 +643,37 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
             first_body = system->GetBodies()[0];
         }
         
-        // Simulation loop - follows pattern from working demos (e.g., demo_sphere_decay.cpp)
-        // Respects GUI pause button via ui.simulationStarted flag
-        while (system->GetChTime() < time_end) {
-            // Update visualization first
-            if (!nogui) {
-                if (!ui.IsRunning(timestep)) {
-                    hydroc::cli::LogWarning("UI stopped, breaking loop");
+        // Determine planned end time for headless runs (nogui)
+        double yaml_end_time = 0.0;
+        TryFindYamlDouble(sim_file, "end_time", yaml_end_time);
+
+        if (nogui) {
+            const double end_time_bound = (yaml_end_time > 0.0) ? yaml_end_time : 40.0;
+            while (system->GetChTime() < end_time_bound) {
+                double current_time = system->GetChTime();
+                try {
+                    system->DoStepDynamics(loop_dt);
+                    step_count++;
+                    if (exporter) {
+                        exporter->RecordStep(system.get());
+                    }
+                    previous_time = current_time;
+                } catch (const std::exception& e) {
+                    hydroc::cli::LogError(std::string("🔥 Exception during DoStepDynamics at step ") + std::to_string(step_count) + ": " + e.what());
+                    hydroc::cli::LogError(std::string("Simulation time: ") + hydroc::FormatNumber(current_time, 6) + " s");
+                    hydroc::cli::LogError(std::string("Step size: ") + hydroc::FormatNumber(loop_dt, 6) + " s");
+                    break;
+                } catch (...) {
+                    hydroc::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
+                    hydroc::cli::LogError(std::string("Simulation time: ") + hydroc::FormatNumber(current_time, 6) + " s");
                     break;
                 }
             }
-            
-            // Only step simulation if not paused (matches demo pattern)
-            if (ui.simulationStarted) {
+        } else {
+            // GUI-driven loop: respects pause via ui.simulationStarted and closes when window stops
+            while (ui.IsRunning(loop_dt)) {
+                // Only step simulation if not paused (matches demo pattern)
+                if (ui.simulationStarted) {
                 double current_time = system->GetChTime();
                 
                 // 🔁 Step-level diagnostics (every step when in trace mode, conditional otherwise)
@@ -603,8 +701,11 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                 
                 try {
                     // 🧯 Scoped try/catch around DoStepDynamics
-                    system->DoStepDynamics(timestep);
+                    system->DoStepDynamics(loop_dt);
                     step_count++;
+                    if (exporter) {
+                        exporter->RecordStep(system.get());
+                    }
                     
                     // 🧯 After first step - check if simulation time advanced
                     if (first_step) {
@@ -719,7 +820,7 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     // Enhanced exception handling with more diagnostics
                     hydroc::cli::LogError(std::string("🔥 Exception during DoStepDynamics at step ") + std::to_string(step_count) + ": " + e.what());
                     hydroc::cli::LogError(std::string("Simulation time: ") + hydroc::FormatNumber(current_time, 6) + " s");
-                    hydroc::cli::LogError(std::string("Step size: ") + hydroc::FormatNumber(timestep, 6) + " s");
+                    hydroc::cli::LogError(std::string("Step size: ") + hydroc::FormatNumber(loop_dt, 6) + " s");
                     
                     if (debug_mode && first_body) {
                         auto pos = first_body->GetPos();
@@ -740,17 +841,22 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     hydroc::cli::LogError("This indicates a serious system error");
                     break;  // Exit simulation loop on exception
                 }
-                
-                // Enforce real-time pacing (prevents running as fast as possible)
-                realtime_timer.Spin(timestep);
             }
+        }
         }
         
         auto end_time = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         
         // Final results display (CLI visible)
-        hydroc::cli::ShowSimulationResults(system->GetChTime(), static_cast<int>(system->GetChTime() / timestep), duration.count() / 1000.0);
+        hydroc::cli::ShowSimulationResults(system->GetChTime(), static_cast<int>(system->GetChTime() / loop_dt), duration.count() / 1000.0);
+
+        // Finalize HDF5 output with runtime metadata
+        if (exporter) {
+            double wall_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+            exporter->SetRunMetadata(std::string(""), std::string(""), wall_s, step_count, loop_dt, system->GetChTime());
+            exporter->Finalize();
+        }
         
         // Display warnings section if any warnings were collected
         hydroc::cli::DisplayWarnings();

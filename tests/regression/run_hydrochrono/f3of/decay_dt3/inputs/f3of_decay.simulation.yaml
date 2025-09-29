@@ -4,18 +4,12 @@ simulation:
   contact_method: SMC
   
   time_step: 0.02
-  end_time: 150.0
+  end_time: 40.0
   enforce_realtime: false
   gravity: [0, 0, -9.81]
   
-  # integrator:
-  #   type: HHT
-  #   rel_tolerance: 1e-4
-  #   abs_tolerance_states: 1e-4
-  #   abs_tolerance_multipliers: 1e2
-  #   max_iterations: 50
-  #   use_stepsize_control: false
-  #   use_modified_newton: false
+  integrator:
+    type: EULER_IMPLICIT_LINEARIZED
 
   solver:
     type: SPARSE_QR

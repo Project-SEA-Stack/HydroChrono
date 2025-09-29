@@ -547,6 +547,8 @@ function Show-SuccessSummary {
     Write-Host "Next steps:" -ForegroundColor Cyan
     Write-Host "  Run regression tests:" -ForegroundColor White
     Write-Host "    ctest -C $BuildType -L regression" -ForegroundColor Gray
+    Write-Host "  Or run Python-based YAML tests for run_hydrochrono.exe:" -ForegroundColor White
+    Write-Host "    python .\\tests\\regression\\run_hydrochrono\\run_tests.py --all" -ForegroundColor Gray
 }
 
 # =============================================================================

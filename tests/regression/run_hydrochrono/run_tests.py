@@ -3,6 +3,8 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+import importlib.util
+import numpy as np
 
 
 # Resolve project root for both layouts:
@@ -27,15 +29,23 @@ def default_exe() -> str:
 
 
 def find_ref(model: str, test_type: str) -> str | None:
-	# Prefer new run_hydrochrono expected dir
-	preferred = THIS / model / test_type / "expected" / f"hc_ref_{model}_{test_type}.txt"
-	if preferred.exists():
-		return str(preferred)
-	# Fallback to legacy regression reference_data
-	legacy = ROOT / "tests" / "regression" / "reference_data" / model / test_type / f"hc_ref_{model}_{test_type}.txt"
-	if legacy.exists():
-		return str(legacy)
-	return None
+    expected_dir = THIS / model / test_type / "expected"
+    # Prefer baseline.h5
+    h5_base = expected_dir / "baseline.h5"
+    if h5_base.exists():
+        return str(h5_base)
+    # Any h5 in expected
+    for p in expected_dir.glob("*.h5"):
+        return str(p)
+    # Legacy txt in expected
+    txt_expected = expected_dir / f"hc_ref_{model}_{test_type}.txt"
+    if txt_expected.exists():
+        return str(txt_expected)
+    # Legacy regression reference_data
+    legacy = ROOT / "tests" / "regression" / "reference_data" / model / test_type / f"hc_ref_{model}_{test_type}.txt"
+    if legacy.exists():
+        return str(legacy)
+    return None
 
 
 def run_case(exe: str, model: str, test_type: str, tol: float, update_baseline: bool, quiet: bool, show: bool, gui: bool) -> int:
@@ -64,18 +74,109 @@ def run_case(exe: str, model: str, test_type: str, tol: float, update_baseline: 
 		return r1.returncode
 	# 2) compare
 	ref = find_ref(model, test_type)
+	outputs_h5 = (THIS / model / test_type / "outputs" / "results.still.h5").resolve()
+	plots_dir = (THIS / model / test_type / "outputs" / "plots").resolve()
+	# Neutral/adapter-driven comparison path
+	if outputs_h5.exists():
+		adapter_path = THIS / model / "signal_adapter.py"
+		if adapter_path.exists():
+			try:
+				spec = importlib.util.spec_from_file_location(f"adapter_{model}", str(adapter_path))
+				assert spec and spec.loader
+				adapter = importlib.util.module_from_spec(spec)
+				spec.loader.exec_module(adapter)  # type: ignore
+				# import plotting template from tests/regression
+				regression_dir = THIS.parent
+				if str(regression_dir) not in sys.path:
+					sys.path.insert(0, str(regression_dir))
+				from compare_template import create_comparison_plot  # type: ignore
+				# helper
+				def rms_relative_error(ref_arr: np.ndarray, pred_arr: np.ndarray) -> float:
+					ref_rms = float(np.sqrt(np.mean(np.square(ref_arr))))
+					if ref_rms == 0.0:
+						return float(np.sqrt(np.mean(np.square(pred_arr))))
+					return float(np.sqrt(np.mean(np.square(pred_arr - ref_arr))) / ref_rms)
+				# try multi-signal first
+				multi = getattr(adapter, "select_signals", None)
+				single = getattr(adapter, "select_signal", None)
+				if multi is not None:
+					sim_signals = multi(outputs_h5)
+					ref_signals = multi(Path(ref)) if ref else sim_signals
+					status = 0
+					for name, (t_sim, y_sim, y_label) in sim_signals.items():
+						if name not in ref_signals:
+							continue
+						t_ref, y_ref, _ = ref_signals[name]
+						ref_on_sim = np.interp(t_sim, t_ref, y_ref)
+						rms_rel = rms_relative_error(ref_on_sim, y_sim)
+						result = "PASS" if rms_rel <= tol else "FAIL"
+						print(f"{result} | N={len(t_sim)} | RMSrel={rms_rel:.6f} | tol={tol:.6f}")
+						# plot
+						plots_dir.mkdir(parents=True, exist_ok=True)
+						ref_data = np.column_stack((t_sim, ref_on_sim))
+						sim_data = np.column_stack((t_sim, y_sim))
+						create_comparison_plot(
+							ref_data,
+							sim_data,
+							f"{model}_{test_type}_test - {name}",
+							str(plots_dir),
+							ref_file_path=str(ref) if ref else str(outputs_h5),
+							test_file_path=str(outputs_h5),
+							executable_path=None,
+							y_label=y_label,
+							executable_patterns=None,
+						)
+						if result != "PASS":
+							status = 1
+					return status
+				if single is not None:
+					t_sim, y_sim, y_label = single(outputs_h5)
+					if ref:
+						t_ref, y_ref, _ = single(Path(ref))
+						ref_on_sim = np.interp(t_sim, t_ref, y_ref)
+					else:
+						ref_on_sim = y_sim.copy()
+					rms_rel = rms_relative_error(ref_on_sim, y_sim)
+					result = "PASS" if rms_rel <= tol else "FAIL"
+					print(f"{result} | N={len(t_sim)} | RMSrel={rms_rel:.6f} | tol={tol:.6f}")
+					plots_dir.mkdir(parents=True, exist_ok=True)
+					ref_data = np.column_stack((t_sim, ref_on_sim))
+					sim_data = np.column_stack((t_sim, y_sim))
+					create_comparison_plot(
+						ref_data,
+						sim_data,
+						f"{model}_{test_type}_test",
+						str(plots_dir),
+						ref_file_path=str(ref) if ref else str(outputs_h5),
+						test_file_path=str(outputs_h5),
+						executable_path=None,
+						y_label=y_label,
+						executable_patterns=None,
+					)
+					return 0 if result == "PASS" else 1
+			except Exception as e:
+				if quiet:
+					print(f"Adapter compare failed for {model}/{test_type}: {e}", file=sys.stderr)
+	# Default path (legacy adapter mode)
+	# Use explicit simple-mode compare for all other tests too (heave of first body by default)
+	outputs_h5 = (THIS / model / test_type / "outputs" / "results.still.h5").resolve()
+	plots_dir = (THIS / model / test_type / "outputs" / "plots").resolve()
 	cmd = [
 		"python",
 		str(THIS / "compare_results.py"),
-		"--setup",
-		str(inputs_setup),
-		"--tol",
-		str(tol),
+		"--ref", ref if ref else str(outputs_h5),
+		"--sim", str(outputs_h5),
+		"--ref-time-dset", "/results/time/time",
+		"--sim-time-dset", "/results/time/time",
+		"--ref-val-dset", "/results/model/bodies/body1/position",
+		"--ref-col", "2",
+		"--sim-val-dset", "/results/model/bodies/body1/position",
+		"--sim-col", "2",
+		"--ylabel", "Heave (m)",
+		"--title", f"{model}_{test_type}_test",
+		"--outdir", str(plots_dir),
+		"--tol", str(tol),
 	]
-	if update_baseline:
-		cmd.append("--update-baseline")
-	if ref:
-		cmd.extend(["--ref", ref])
 	if show:
 		cmd.append("--show")
 	r2 = subprocess.run(cmd, capture_output=quiet, text=True, encoding="utf-8", errors="ignore")

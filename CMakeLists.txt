@@ -18,8 +18,8 @@ endif()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 project(HydroChrono 
-	VERSION 0.2.6
-	DESCRIPTION "A hydrodynamic library for use with Project Chrono."
+	VERSION 0.3
+	DESCRIPTION "Hydrodynamics for Project Chrono."
 	LANGUAGES CXX
 )
 

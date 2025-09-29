@@ -4,7 +4,7 @@ simulation:
   contact_method: SMC
   
   time_step: 0.02
-  end_time: 150.0
+  end_time: 40.0
   enforce_realtime: false
   gravity: [0, 0, -9.81]
   

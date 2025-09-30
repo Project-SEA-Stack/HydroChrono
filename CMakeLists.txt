@@ -281,8 +281,18 @@ endfunction()
 function(configure_test_environment)
 	# Set up DLL search paths for Windows testing
 	set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
-	set(IRRLICHT_DLL_DIR "C:/libs/irrlicht-1.8.4/bin/Win64-VisualStudio")
-	set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+	# Derive Irrlicht DLL dir from Irrlicht_ROOT provided by user config
+	set(IRRLICHT_DLL_DIR "")
+	if(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
+		set(IRRLICHT_DLL_DIR "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
+	elseif(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin")
+		set(IRRLICHT_DLL_DIR "${Irrlicht_ROOT}/bin")
+	endif()
+	if(IRRLICHT_DLL_DIR)
+		set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+	else()
+		set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+	endif()
 endfunction()
 
 # ── Main HydroChrono Library ──

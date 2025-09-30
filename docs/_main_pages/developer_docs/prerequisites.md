@@ -18,7 +18,7 @@ For detailed instructions on how to install and build Chrono, please refer to th
 
 Below are the necessary dependencies and the recommended versions:
 
-- C++ Compiler (Visual Studio 2019 recommended)
+- C++ Compiler (Visual Studio 2022 recommended)
 - Eigen3 (3.4.0 recommended)
 - Irrlicht Engine (1.8.4)
 - CMake (3.18.2 or newer recommended)

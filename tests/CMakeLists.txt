@@ -18,11 +18,11 @@ endif()
 # Note: Regression tests are now handled in tests/regression/CMakeLists.txt
 # and included directly from the main CMakeLists.txt
 
-# Set common test properties, including the PATH environment variable
-# This ensures that test executables can find required DLLs (Chrono, Irrlicht, etc.)
-set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
-set(IRRLICHT_DLL_DIR "C:/libs/irrlicht-1.8.4/bin/Win64-VisualStudio")
-set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}")
+# Expect TEST_ENVIRONMENT to be configured by top-level configure_test_environment().
+# Provide a minimal fallback to avoid failures if not defined.
+if(NOT DEFINED TEST_ENVIRONMENT)
+  set(TEST_ENVIRONMENT "PATH=$ENV{PATH}")
+endif()
 
 # Unit Tests
 # ==========

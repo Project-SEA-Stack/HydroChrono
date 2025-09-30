@@ -15,8 +15,8 @@ This page provides instructions on how to build HydroChrono and its associated d
 Before attempting to build HydroChrono, ensure you have installed and built all of the required [prerequisites](/developer_docs/prerequisites). The exact versions listed in the prerequisites are essential for proper functionality.
 
 - CMake 3.16 or higher
-- A C++ compiler (Visual Studio 2019 or higher, or GCC through MinGW/MSYS2)
-- Project Chrono (built from source, tested with v9.0.0 and v9.0.1)
+- A C++ compiler (Visual Studio 2022 or higher, or GCC through MinGW/MSYS2)
+- Project Chrono (built from source, tested with latest version of main (30th Sep 2025))
 - HDF5 1.10.8 or higher
 - Python 3.8 or higher (with numpy and matplotlib)
 

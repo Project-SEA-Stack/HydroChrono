@@ -44,7 +44,7 @@ function Load-Configuration {
     
     # Non-sensitive default values only
     $defaultConfig = @{
-        ScriptVersion = "2.1"
+        ScriptVersion = "2.2"
         DefaultBuildType = "Release"
         DefaultYamlRunner = "ON"
         RuntimeLibrary = "MultiThreaded`$<`$<CONFIG:Debug>:Debug>DLL"
@@ -362,7 +362,7 @@ function Initialize-BuildDirectory {
 function Configure-CMake {
     Write-Section "Configuring CMake"
     
-    $env:CMAKE_MODULE_PATH = $Config.CMakeModulePath
+    $env:CMAKE_MODULE_PATH = ($Config.CMakeModulePath -replace '\\','/')
     
     Write-Subsection "Build Configuration"
     Write-Info "Runtime library: MultiThreaded DLL (for Chrono compatibility)"
@@ -558,13 +558,19 @@ function Show-SuccessSummary {
 function Get-BuildArguments {
     param([string]$YamlRunner, [string]$BuildType)
     
+    $chronoDir  = ($Config.ChronoDir  -replace '\\','/')
+    $hdf5Dir    = ($Config.Hdf5Dir    -replace '\\','/')
+    $pythonRoot = ($Config.PythonRoot -replace '\\','/')
+    $eigenDir   = ($Config.EigenDir   -replace '\\','/')
+    $irrlicht   = ($Config.IrrlichtDir -replace '\\','/')
+    
     return @(
         "..",
-        "-DChrono_DIR=`"$($Config.ChronoDir)`"",
-        "-DHDF5_DIR=`"$($Config.Hdf5Dir)`"",
-        "-DPython3_ROOT_DIR=`"$($Config.PythonRoot)`"",
-        "-DEIGEN3_INCLUDE_DIR=`"$($Config.EigenDir)`"",
-        "-DIrrlicht_ROOT=`"$($Config.IrrlichtDir)`"",
+        "-DChrono_DIR=`"$chronoDir`"",
+        "-DHDF5_DIR=`"$hdf5Dir`"",
+        "-DPython3_ROOT_DIR=`"$pythonRoot`"",
+        "-DEIGEN3_INCLUDE_DIR=`"$eigenDir`"",
+        "-DIrrlicht_ROOT=`"$irrlicht`"",
         "-DHYDROCHRONO_ENABLE_YAML_RUNNER=`"$YamlRunner`"",
         "-DCMAKE_BUILD_TYPE=`"$BuildType`"",
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=`"$($Config.RuntimeLibrary)`""

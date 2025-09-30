@@ -1,6 +1,0 @@
-model_file: f3of_decay_test_2.model.yaml
-simulation_file: f3of_decay.simulation.yaml
-hydro_file: f3of_decay.hydro.yaml
-
-output_directory: ../outputs
-

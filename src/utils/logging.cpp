@@ -307,7 +307,7 @@ void CLILogger::ShowBanner() {
     Log(LogLevel::Success, "│  Status         : Prototype                                                                         │", LogColor::Gray);
     Log(LogLevel::Success, "│  Author         : SEA-Stack Development Team                                                        │", LogColor::Gray);
     Log(LogLevel::Success, "│  Lead Developer : David Ogden                                                                       │", LogColor::Gray);
-    Log(LogLevel::Success, "│  License        : Apache-2.0                                                                        │", LogColor::Gray);
+    Log(LogLevel::Success, "│  License        : MIT                                                                               │", LogColor::Gray);
     Log(LogLevel::Success, "│  URL            : https://github.com/NREL/HydroChrono                                               │", LogColor::Gray);
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
     Log(LogLevel::Success, "╰─────────────────────────────────────────────────────────────────────────────────────────────────────╯", LogColor::BrightCyan);

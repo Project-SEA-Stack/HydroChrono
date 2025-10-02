@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 import importlib.util
 import numpy as np
-
+import os
 
 # Resolve project root for both layouts:
 # - tests/run_hydrochrono/...  => root = parents[2]
@@ -16,15 +16,22 @@ THIS = _here.parent
 
 
 def default_exe() -> str:
-	"""Best-effort discovery of run_hydrochrono.exe in common build locations."""
-	# Prefer Release build if present
+	"""Best-effort discovery of run_hydrochrono.exe in build and install layouts."""
+	# Allow override via environment
+	for key in ["HC_RUN_EXE", "RUN_HYDROCHRONO_EXE", "HYDROCHRONO_EXE"]:
+		env = os.environ.get(key)
+		if env and Path(env).exists():
+			return env
+	# Check typical locations: build tree (Release/Debug), install tree (bin), root
 	for p in [
 		ROOT / "build" / "bin" / "Release" / "run_hydrochrono.exe",
 		ROOT / "build" / "bin" / "Debug" / "run_hydrochrono.exe",
+		ROOT / "bin" / "run_hydrochrono.exe",
 		ROOT / "run_hydrochrono.exe",
 	]:
 		if p.exists():
 			return str(p)
+	# Fall back to name; rely on PATH (e.g., RUN-TESTS.ps1 prepends install/bin)
 	return "run_hydrochrono.exe"
 
 

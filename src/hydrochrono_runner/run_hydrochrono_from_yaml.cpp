@@ -10,6 +10,7 @@
 #include <chrono/physics/ChSystem.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/core/ChRealtimeStep.h>
+#include <chrono/core/ChGlobal.h>
 #include <hydroc/gui/guihelper.h>
 
 #include <algorithm>
@@ -357,6 +358,33 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         hydroc::cli::ShowBanner();
 
         // ---------------------------------------------------------------------
+        // 1.1 Configure Chrono data path for installed ZIP (skybox/colormaps)
+        //     Resolve relative to the executable: <install_root>/data/chrono/
+        // ---------------------------------------------------------------------
+        try {
+            std::filesystem::path exe_abs = std::filesystem::absolute(std::filesystem::path(argv[0]));
+            std::filesystem::path exe_dir = exe_abs.parent_path();
+            std::filesystem::path install_root = exe_dir.parent_path();
+            // Prefer <install_root>/data; fall back to <install_root>/data/chrono for older packages
+            std::filesystem::path data_primary   = install_root / "data";
+            std::filesystem::path data_fallback  = install_root / "data" / "chrono";
+            std::filesystem::path chrono_data    = std::filesystem::exists(data_primary) ? data_primary : data_fallback;
+            if (std::filesystem::exists(chrono_data)) {
+                std::string chrono_data_str = chrono_data.generic_string();
+                if (!chrono_data_str.empty() && chrono_data_str.back() != '/') chrono_data_str.push_back('/');
+                chrono::SetChronoDataPath(chrono_data_str);
+#ifdef _WIN32
+                _putenv_s("CHRONO_DATA_DIR", chrono_data_str.c_str());
+#else
+                setenv("CHRONO_DATA_DIR", chrono_data_str.c_str(), 1);
+#endif
+                hydroc::debug::LogDebug(std::string("Set CHRONO_DATA_DIR to ") + chrono_data_str);
+            }
+        } catch (...) {
+            // non-fatal; visualization may still work if Chrono has its own data path
+        }
+
+        // ---------------------------------------------------------------------
         // 2. Setup and File Resolution (all internal - Debug level)
         // ---------------------------------------------------------------------
         std::string model_file;
@@ -672,6 +700,11 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         } else {
             // GUI-driven loop: respects pause via ui.simulationStarted and closes when window stops
             while (ui.IsRunning(loop_dt)) {
+                // Enforce YAML-configured end_time even in GUI mode
+                if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
+                    hydroc::cli::LogInfo(std::string("Reached configured end_time: ") + hydroc::FormatNumber(yaml_end_time, 3) + " s. Stopping.");
+                    break;
+                }
                 // Only step simulation if not paused (matches demo pattern)
                 if (ui.simulationStarted) {
                 double current_time = system->GetChTime();

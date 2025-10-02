@@ -484,45 +484,175 @@ endif()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 include(GNUInstallDirs)
+option(HC_INSTALL_DEV_KIT "Install CMake dev package (headers/libs)" OFF)
 
-# Export HydroChrono as an importable target for other CMake projects
-install(TARGETS HydroChrono
-	EXPORT HydroChronoTargets
-	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+if(HC_INSTALL_DEV_KIT)
+    # Export HydroChrono as an importable target for other CMake projects
+    install(TARGETS HydroChrono
+        EXPORT HydroChronoTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
 
-install(EXPORT HydroChronoTargets
-	FILE HydroChronoTargets.cmake
-	DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
-	NAMESPACE HydroChrono::
-)
+    install(EXPORT HydroChronoTargets
+        FILE HydroChronoTargets.cmake
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
+        NAMESPACE HydroChrono::
+    )
 
-# Install public headers
-install(DIRECTORY include/hydroc
-	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+    # Install public headers
+    install(DIRECTORY include/hydroc
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
 
-# Generate and install package config files for find_package() support
-include(CMakePackageConfigHelpers)
-configure_package_config_file(
-	cmake/HydroChronoConfig.cmake.in
-	"${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoConfig.cmake"
-	INSTALL_DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
-)
+    # Generate and install package config files for find_package() support
+    include(CMakePackageConfigHelpers)
+    configure_package_config_file(
+        cmake/HydroChronoConfig.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoConfig.cmake"
+        INSTALL_DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
+    )
 
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoConfig.cmake"
-	DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
-)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoConfig.cmake"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/HydroChrono/cmake"
+    )
+endif()
 
-# Export targets for build tree usage (without installation)
-export(EXPORT HydroChronoTargets
-	FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoTargets.cmake"
-	NAMESPACE HydroChrono::
-)
+if(HC_INSTALL_DEV_KIT)
+    # Export targets for build tree usage (without installation)
+    export(EXPORT HydroChronoTargets
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake/HydroChronoTargets.cmake"
+        NAMESPACE HydroChrono::
+    )
+endif()
 
 # ── Debug Symbols in Release Mode ──
 # Keep debug symbols in Release builds for better profiling and crash analysis
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 7.1 Runtime installer and ZIP packaging for releases
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Flat install tree for public distribution
+option(HC_INSTALL_DEV_DEMOS "Install developer demo executables" OFF)
+
+# Install main CLI only (if built)
+if(TARGET run_hydrochrono)
+	install(TARGETS run_hydrochrono
+		RUNTIME DESTINATION bin COMPONENT runtime)
+endif()
+
+# Collect runtime DLLs from imported targets when available
+set(HC_DLLS)
+foreach(tgt IN ITEMS Chrono::Chrono_core Chrono::Chrono_irrlicht Chrono::Chrono_parsers Chrono::ChronoModels_robot yaml-cpp yaml-cpp::yaml-cpp)
+	if(TARGET ${tgt})
+		list(APPEND HC_DLLS "$<TARGET_FILE:${tgt}>")
+	endif()
+endforeach()
+
+# Irrlicht.dll overridable from build system; default derived from Irrlicht_ROOT
+set(IRRLICHT_DLL_PATH_DEFAULT "${Irrlicht_ROOT}/bin/Win64-VisualStudio/Irrlicht.dll")
+set(IRRLICHT_DLL_PATH "${IRRLICHT_DLL_PATH_DEFAULT}" CACHE FILEPATH "Path to Irrlicht.dll")
+if(EXISTS "${IRRLICHT_DLL_PATH}")
+	list(APPEND HC_DLLS "${IRRLICHT_DLL_PATH}")
+endif()
+
+# YAML-CPP runtime DLL overridable from build system
+set(YAML_CPP_DLL_PATH "" CACHE FILEPATH "Path to yaml-cpp runtime DLL (yaml-cpp.dll)")
+if(EXISTS "${YAML_CPP_DLL_PATH}")
+	list(APPEND HC_DLLS "${YAML_CPP_DLL_PATH}")
+endif()
+
+if(HC_DLLS)
+	install(FILES ${HC_DLLS} DESTINATION bin COMPONENT runtime)
+endif()
+
+# Ensure yaml-cpp.dll is part of the runtime component in the ZIP (OPTIONAL handles missing paths)
+install(FILES
+    "${Chrono_DIR}/../bin/Release/yaml-cpp.dll"
+    "${Chrono_DIR}/../bin/RelWithDebInfo/yaml-cpp.dll"
+    "${Chrono_DIR}/../bin/MinSizeRel/yaml-cpp.dll"
+    "${Chrono_DIR}/../bin/Debug/yaml-cpp.dll"
+    "${CMAKE_BINARY_DIR}/bin/Release/yaml-cpp.dll"
+    "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo/yaml-cpp.dll"
+    "${CMAKE_BINARY_DIR}/bin/MinSizeRel/yaml-cpp.dll"
+    "${CMAKE_BINARY_DIR}/bin/Debug/yaml-cpp.dll"
+    DESTINATION bin COMPONENT runtime OPTIONAL)
+
+# Fallback: copy all Chrono-built DLLs for the active config into bin
+install(CODE "
+  file(GLOB _ALL_DLLS \"${Chrono_DIR}/../bin/${CMAKE_INSTALL_CONFIG_NAME}/*.dll\")
+  foreach(_f IN LISTS _ALL_DLLS)
+    if(EXISTS \"${_f}\")
+      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
+    endif()
+  endforeach()
+")
+
+# Also copy any DLLs produced or staged in this project's build bin (e.g., yaml-cpp.dll)
+install(CODE "
+  file(GLOB _HC_DLLS \"${CMAKE_BINARY_DIR}/bin/${CMAKE_INSTALL_CONFIG_NAME}/*.dll\")
+  foreach(_f IN LISTS _HC_DLLS)
+    if(EXISTS \"${_f}\")
+      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
+    endif()
+  endforeach()
+")
+
+# Removed fragile fallback DLL copy to avoid install script parse errors. The
+# release DLLs should be resolved via imported targets or IRRLICHT_DLL_PATH.
+
+# Optional runtime data folder
+if(EXISTS "${PROJECT_SOURCE_DIR}/data")
+	install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/ DESTINATION data COMPONENT runtime)
+endif()
+
+# Chrono visual assets (skybox, colormaps) for GUI
+if(DEFINED CHRONO_DATA_DIR AND EXISTS "${CHRONO_DATA_DIR}")
+	if(EXISTS "${CHRONO_DATA_DIR}/skybox")
+		install(DIRECTORY "${CHRONO_DATA_DIR}/skybox" DESTINATION data COMPONENT runtime)
+	endif()
+	if(EXISTS "${CHRONO_DATA_DIR}/colormaps")
+		install(DIRECTORY "${CHRONO_DATA_DIR}/colormaps" DESTINATION data COMPONENT runtime)
+	endif()
+endif()
+
+# Public, user-facing regression test suite only
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/tests/regression/run_hydrochrono
+        DESTINATION tests COMPONENT python-tests
+		PATTERN "__pycache__" EXCLUDE
+		PATTERN "*.pyc" EXCLUDE)
+
+# Simple runner script to execute tests from the installed tree
+install(PROGRAMS ${PROJECT_SOURCE_DIR}/scripts/RUN-TESTS.ps1
+		DESTINATION tests COMPONENT python-tests)
+
+# Optional developer demo executables (OFF by default)
+if(HC_INSTALL_DEV_DEMOS)
+	install(DIRECTORY ${HYDROCHRONO_DEMO_OUTPUT_DIR}/$<CONFIG>/
+			DESTINATION bin/tests/dev
+			FILES_MATCHING PATTERN "demo_*.exe")
+endif()
+
+# MSVC runtime DLLs and ZIP packaging via CPack
+include(InstallRequiredSystemLibraries)
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "HydroChrono")
+set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
+include(CPack)
+
+# Optionally include Python runtime DLL if Chrono::Parsers depends on it
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND OR Python3_FOUND)
+    get_filename_component(_PY_DIR "${Python3_EXECUTABLE}" DIRECTORY)
+    if(DEFINED Python3_VERSION_MAJOR AND DEFINED Python3_VERSION_MINOR)
+        set(_PY_DLL_NAME "python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}.dll")
+        set(_PY_DLL_PATH "${_PY_DIR}/${_PY_DLL_NAME}")
+        if(EXISTS "${_PY_DLL_PATH}")
+            install(FILES "${_PY_DLL_PATH}" DESTINATION bin COMPONENT runtime)
+        endif()
+    endif()
+endif()

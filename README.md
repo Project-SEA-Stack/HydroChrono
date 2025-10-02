@@ -6,13 +6,10 @@
   <a href="#"><img src="https://img.shields.io/badge/status-Prototype-orange.svg" /></a>
 </p>
 
-> [!NOTE]
-> HydroChrono is under active development (v0.3 prototype). This early release focuses on a YAML‑driven CLI and portable HDF5 outputs so you can try the code and share feedback. Expect rapid iteration over the coming year — please open issues/feature requests and join discussions.
-> 
-> • Issues: https://github.com/NREL/HydroChrono/issues  
-> • Discussions: https://github.com/NREL/HydroChrono/discussions
+> ⚠️ HydroChrono is under active development (`v0.3` prototype). This early release focuses on a YAML‑driven CLI and portable HDF5 outputs so you can try the code and share feedback. Expect rapid iteration over the coming year — please open issues/feature requests.
 
-HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation toolkit built on [Project Chrono](https://projectchrono.org/). This repo ships a prototype, YAML‑driven CLI app for running simulations and exporting portable results.
+
+HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation toolkit built on [Project Chrono](https://projectchrono.org/). It is designed for simulating wave energy converters (WECs) and other complex ocean systems, and is 100% free and open‑source end‑to‑end — no proprietary dependencies required. This repo ships a prototype, YAML‑driven CLI app for running simulations and exporting portable results.
 
 ## What it does (under the hood)
 
@@ -115,13 +112,44 @@ run_hydrochrono.exe .\cases\my_model\my_model.setup.yaml
 
 <p align="center"><img src="docs/assets/img/h5_example.png" width="75%" /></p>
 
-## Examples
 
-- Additional ready‑to‑run cases will be included on the Releases page.
-- They double as regression tests:
-  ```powershell
-  python .\run_tests.py --all
-  ```
+## Run the included tests (from the Release ZIP, requires Python)
+
+Use either of the two options below.
+
+Option A — one-command setup (creates a local venv):
+1) Download and unzip the Release ZIP.
+2) Open PowerShell in the unzipped folder (you should see `bin/`, `tests/`, `data/`).
+3) Run:
+   ```powershell
+   cd .\tests
+   .\RUN-TESTS.ps1
+   ```
+   - The script detects `bin\run_hydrochrono.exe`, prompts to create `.venv`, installs needed packages from PyPI, and runs the full suite headless.
+
+Option B — use your existing (conda/venv/system) Python:
+1) Ensure your environment has: `numpy`, `h5py`, `PyYAML`, `matplotlib`.
+2) From the unzipped folder run:
+   ```powershell
+   cd .\tests\run_hydrochrono
+   # optional: python -m pip install -r requirements.txt
+   python .\run_tests.py --all --exe ..\..\bin\run_hydrochrono.exe
+   ```
+
+What you’ll see:
+- The suite runs several regression tests for standard WEC verification cases (IEA sphere, OSWEC, RM3, F3OF).
+- PASS/FAIL summary prints in the console.
+- Results and plots are written under each case: `tests\run_hydrochrono\<case>\<test>\outputs\` (HDF5: `results.still.h5`, plots: `outputs\plots\*.png`).
+
+<p align="center"><img src="docs/assets/img/oswec_decay_test_comparison.png" width="66%" /></p>
+
+
+Run a single test (optional):
+```powershell
+cd .\tests\run_hydrochrono
+python .\run_tests.py --sphere-decay --exe ..\..\bin\run_hydrochrono.exe
+```
+
 
 ## Developers
 

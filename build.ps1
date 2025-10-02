@@ -31,6 +31,7 @@ param(
     [Alias("c")][switch]$Clean,
     [Alias("h")][switch]$Help,
     [Alias("v")][switch]$Verbose,
+    [Alias("p")][switch]$Package,
     [Alias("log")][string]$LogFile = "",
     [Alias("config")][string]$ConfigPath = ".\build-config.json"
 )
@@ -235,6 +236,7 @@ function Show-Help {
     Write-Host "  -BuildType TYPE        Build type: Debug|Release|RelWithDebInfo|MinSizeRel (default: Release)" -ForegroundColor White
     Write-Host "  -Clean                 Clean build (remove build directory before building)" -ForegroundColor White
     Write-Host "  -Verbose               Enable verbose output" -ForegroundColor White
+    Write-Host "  -Package               Install to build\\install and create ZIP via CPack" -ForegroundColor White
     Write-Host "  -Help                  Show this help message" -ForegroundColor White
     Write-Host "  -LogFile PATH          Write build log to specified file (alias: -log)" -ForegroundColor White
     Write-Host "  -ConfigPath PATH       Use custom configuration file (alias: -config)" -ForegroundColor White
@@ -563,6 +565,8 @@ function Get-BuildArguments {
     $pythonRoot = ($Config.PythonRoot -replace '\\','/')
     $eigenDir   = ($Config.EigenDir   -replace '\\','/')
     $irrlicht   = ($Config.IrrlichtDir -replace '\\','/')
+    $irrlichtDllWin = Join-Path $Config.IrrlichtDir "bin\Win64-VisualStudio\Irrlicht.dll"
+    $irrlichtDll = ($irrlichtDllWin -replace '\\','/')
     
     return @(
         "..",
@@ -571,6 +575,8 @@ function Get-BuildArguments {
         "-DPython3_ROOT_DIR=`"$pythonRoot`"",
         "-DEIGEN3_INCLUDE_DIR=`"$eigenDir`"",
         "-DIrrlicht_ROOT=`"$irrlicht`"",
+        "-DIRRLICHT_DLL_PATH=`"$irrlichtDll`"",
+        "-DCHRONO_DATA_DIR=`"$($Config.ChronoDir -replace '/cmake$','' -replace '\\cmake$','')/../bin/data/`"",
         "-DHYDROCHRONO_ENABLE_YAML_RUNNER=`"$YamlRunner`"",
         "-DCMAKE_BUILD_TYPE=`"$BuildType`"",
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=`"$($Config.RuntimeLibrary)`""
@@ -634,6 +640,91 @@ function Show-ErrorHelp {
     
     Write-Host ""
     Write-Host "[LINK] For additional support, check the documentation or open an issue" -ForegroundColor Blue
+}
+
+function Package-Artifacts {
+    Write-Section "Packaging Installables"
+    $installPrefix = Join-Path (Get-Location) "install"
+    if (-not (Test-Path $installPrefix)) {
+        New-Item -ItemType Directory -Path $installPrefix | Out-Null
+    }
+    Write-Info "Install prefix: $installPrefix"
+    
+    Write-Subsection "Installing to prefix"
+    if ($Verbose) {
+        cmake --install . --config $BuildType --prefix "$installPrefix"
+    } else {
+        cmake --install . --config $BuildType --prefix "$installPrefix" 2>&1 | Out-Null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "cmake --install failed"
+        exit 4
+    }
+
+    # Sync additional Chrono DLLs into install\bin (e.g., yaml-cpp.dll)
+    try {
+        $chronoRoot = Split-Path -Path $Config.ChronoDir -Parent | Split-Path -Parent
+        $chronoDllSource = Join-Path $chronoRoot "build\bin\$BuildType"
+        $installBin = Join-Path $installPrefix "bin"
+        if (Test-Path $chronoDllSource) {
+            Write-Subsection "Copying additional DLLs to install\\bin"
+            Get-ChildItem -Path $chronoDllSource -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+                $dest = Join-Path $installBin $_.Name
+                if (-not (Test-Path $dest)) {
+                    Copy-Item -Path $_.FullName -Destination $dest -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        # Also copy DLLs from this project's build bin (Release/Debug) into install\bin
+        $hcDllSource = Join-Path (Get-Location) "bin\$BuildType"
+        if (Test-Path $hcDllSource) {
+            Get-ChildItem -Path $hcDllSource -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+                $dest = Join-Path $installBin $_.Name
+                if (-not (Test-Path $dest)) {
+                    Copy-Item -Path $_.FullName -Destination $dest -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        # Explicit fallback for yaml-cpp.dll
+        $yamlDest = Join-Path $installBin "yaml-cpp.dll"
+        if (-not (Test-Path $yamlDest)) {
+            $yamlCandidates = @(
+                (Join-Path $hcDllSource "yaml-cpp.dll"),
+                (Join-Path $chronoDllSource "yaml-cpp.dll")
+            )
+            foreach ($c in $yamlCandidates) {
+                if ($c -and (Test-Path $c)) {
+                    Copy-Item -Path $c -Destination $yamlDest -Force -ErrorAction SilentlyContinue
+                    break
+                }
+            }
+        }
+        # Copy Chrono visual assets (skybox, colormaps)
+        $chronoData = Join-Path $chronoRoot "build\bin\data"
+        $destDataChrono = Join-Path $installPrefix "data\chrono"
+        if (Test-Path $chronoData) {
+            New-Item -ItemType Directory -Force -Path $destDataChrono | Out-Null
+            foreach ($dir in @("skybox","colormaps")) {
+                $src = Join-Path $chronoData $dir
+                if (Test-Path $src) {
+                    Copy-Item -Recurse -Force -Path $src -Destination $destDataChrono -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    } catch {}
+
+    Write-Subsection "Creating ZIP via CPack"
+    $cpackConfig = Resolve-Path (Join-Path (Get-Location) "CPackConfig.cmake")
+    if ($Verbose) {
+        cpack -C $BuildType --config "$cpackConfig"
+    } else {
+        cpack -C $BuildType --config "$cpackConfig" 2>&1 | Out-Null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "CPack failed"
+        exit 4
+    }
+    Write-Success "Packaging completed"
 }
 
 # =============================================================================
@@ -712,6 +803,10 @@ try {
     
     # Show success summary
     Show-SuccessSummary -BuildType $BuildType
+    
+    if ($Package) {
+        Package-Artifacts
+    }
     
 } catch {
     Write-Error "Unexpected error: $($_.Exception.Message)"

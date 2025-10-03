@@ -24,7 +24,7 @@ HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation too
 
 ## Download
 
-- Get the latest Windows binaries from the [Releases](https://github.com/NREL/HydroChrono/releases) page.
+- Get the latest Windows HydroChrono . zip package from the [Releases](https://github.com/NREL/HydroChrono/releases) page.
 
 ## Quick start (CLI)
 

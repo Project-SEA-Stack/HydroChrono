@@ -1,52 +1,61 @@
 ---
 layout: page
-title: Get Started
+title: Quick Start
 ---
 
-## Running HydroChrono (YAML Runner)
+## 1) Download
 
-HydroChrono ships a YAML-driven CLI runner, `run_hydrochrono.exe`, which loads a case from a directory or a `*.setup.yaml` file and prints a clean, structured summary to the console.
+- Get the latest Windows binaries from the [Releases]({{ site.baseurl }}/get_started/#) page (or the repo Releases page).
 
-### Usage
+## 2) Run a demo
 
-```bash
-run_hydrochrono.exe [options] <input_directory>
-run_hydrochrono.exe [options] <model.setup.yaml>
-```
+Open a terminal in the unzipped folder and try a built-in case:
 
-### Common options
-
-- `-h, --help`: Show help and exit
-- `-v, --version`: Show HydroChrono version and exit
-- `-i, --info`: Show brief project info
-- `--nogui`: Disable GUI visualization
-- `--log`: Write a detailed log file to `<input_dir>/logs/`
-- `--quiet`: Suppress console output (pair with `--log`)
-- `--debug`: Increase verbosity (CLI shows debug details)
-- `--trace`: Most verbose developer diagnostics (implies `--debug`)
-
-### Examples
-
-```bash
-# Normal run: structured CLI output, no file
+```powershell
 run_hydrochrono.exe demos/yaml/rm3
-
-# Create a detailed log file (timestamps + levels) in <input_dir>/logs/
-run_hydrochrono.exe demos/yaml/rm3 --log
-
-# Verbose CLI output (includes debug-level info); no file unless combined with --log
-run_hydrochrono.exe demos/yaml/rm3 --debug
-
-# Silent CLI, but still write a detailed log file (best for batch runs)
-run_hydrochrono.exe demos/yaml/rm3 --quiet --log
-
-# Verbose CLI and detailed file log
-run_hydrochrono.exe demos/yaml/rm3 --log --debug
 ```
 
-### Notes
+## 3) Run from a setup file or directory
 
-- Without `--log`, no file is created.
-- With `--quiet --log`, the CLI is silent and the log file contains full details.
-- File logs always include ISO8601 timestamps and log levels and preserve emojis/symbols.
-- CLI headers and dividers render to exactly 60 visible characters for consistent layout.
+HydroChrono loads a case from a directory or a `*.setup.yaml` file and prints a clean, structured summary to the console.
+
+```powershell
+run_hydrochrono.exe <input_directory>
+run_hydrochrono.exe <model.setup.yaml>
+```
+
+## 4) Useful options
+
+- `--nogui`: disable visualization
+- `--log`: write a detailed file log to `<input_dir>/logs/`
+- `--quiet`: suppress console output (pair with `--log`)
+- `--debug` / `--trace`: increase CLI verbosity
+
+Examples:
+
+```powershell
+run_hydrochrono.exe demos/yaml/rm3 --log
+run_hydrochrono.exe demos/yaml/rm3 --quiet --log
+run_hydrochrono.exe demos/yaml/rm3 --debug
+```
+
+## 5) Run your own case
+
+Point to your folder (auto-detects `*.setup.yaml`) or the explicit setup file:
+
+```powershell
+run_hydrochrono.exe .\cases\my_model\
+run_hydrochrono.exe .\cases\my_model\my_model.setup.yaml
+```
+
+### Logging details
+
+See the full logging/CLI output guide: [Logging]({{ site.baseurl }}/logging/)
+
+### Create a new model
+
+Follow the minimal inputs guide: [Create a New Model]({{ site.baseurl }}/new_model/)
+
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

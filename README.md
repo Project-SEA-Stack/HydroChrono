@@ -6,17 +6,22 @@
   <a href="#"><img src="https://img.shields.io/badge/status-Prototype-orange.svg" /></a>
 </p>
 
-> ⚠️ HydroChrono is under active development (`v0.3` prototype). This early release focuses on a YAML‑driven CLI and portable HDF5 outputs so you can try the code and share feedback. Expect rapid iteration over the coming year — please open issues/feature requests.
+> ⚠️ HydroChrono is under active development (`v0.3` prototype). This early release focuses on a YAML‑driven CLI and portable HDF5 outputs so you can try the code and share feedback. Expect rapid iteration over the coming year (inc. more advanced PTO, control, mooring & hydrodynamics) — please get in touch if you have any issues or feature requests.
 
 
-HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation toolkit built on [Project Chrono](https://projectchrono.org/). It is designed for simulating wave energy converters (WECs) and other complex ocean systems, and is 100% free and open‑source end‑to‑end — no proprietary dependencies required. This repo ships a prototype, YAML‑driven CLI app for running simulations and exporting portable results.
+Website: https://nrel.github.io/HydroChrono/
+
+
+HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation toolkit built on [Project Chrono](https://projectchrono.org/). It is designed for simulating wave energy converters (WECs) and other complex ocean systems, and is **100% free and open‑source** end‑to‑end — no proprietary dependencies required. This repo ships a prototype, YAML‑driven CLI app for running simulations and exporting portable results.
+
+📄 See Publications at the end of this README.
 
 ## What it does (under the hood)
 
 - Uses Boundary Element Method (BEM) hydrodynamic coefficients (e.g., from [Capytaine](https://github.com/capytaine/capytaine)) to describe added mass, radiation damping, and wave excitation. HydroChrono reads these coefficients from BEMIO‑format HDF5 (.h5) files, an approach familiar to [WEC‑Sim](https://github.com/WEC-Sim/WEC-Sim) users.
 - Runs time‑domain simulations via the Cummins equation (impulse‑response/convolution form for radiation effects).
 - Builds complex, nonlinear multibody systems using Project Chrono; hydrodynamic loads are currently first‑order, with expanded models planned.
-- Exports portable results to HDF5 for post‑processing and validation.
+- Supports a YAML-driven CLI, with logging, GUI and exports portable results to HDF5 for post‑processing and validation.
 
 ## Download
 
@@ -154,3 +159,8 @@ python .\run_tests.py --sphere-decay --exe ..\..\bin\run_hydrochrono.exe
 ## Developers
 
 - Full build and contribution docs: [Developer documentation](https://nrel.github.io/HydroChrono/developer_docs/build_instructions.html)
+
+## Papers
+
+- Ogden, 2023 — HydroChrono background, theory, and implementation details: [PDF](docs/assets/papers/Ogden2023%20-%20HydroChrono.pdf)
+- Ogden, 2025 — Automated design exploration with meshing, Capytaine, and HydroChrono in the loop: [PDF](docs/assets/papers/Ogden2025%20-%20Automated%20Design%20Exploration%20of%20TALOS%20Using%20TOP-WEC.pdf)

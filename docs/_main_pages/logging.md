@@ -1,4 +1,5 @@
 ---
+layout: page
 title: Logging and CLI Output
 permalink: /logging/
 ---
@@ -36,13 +37,12 @@ run_hydrochrono.exe <input_dir> --log --debug
 Notes:
 - Without `--log`, no file is created.
 - With `--quiet --log`, the CLI is silent and the log file contains full details.
-- File logs always include ISO8601 timestamps and log levels and preserve emojis/symbols.
+- File logs always include ISO8601 timestamps and log levels and preserve symbols.
 
 ## What you’ll see
 
-- A single boxed header at the top (“HydroChrono Simulation”).
+- A single boxed header at the top (“HydroChrono”).
 - Flat section headers for Hydrodynamic Data Summary, Wave Model, System Configuration, etc.
-- All section header dividers are exactly 60 visible characters. Colons are aligned within sections.
 - A dedicated “Warnings” block; noisy library messages are captured and summarized there.
 
 ## Tips
@@ -51,4 +51,6 @@ Notes:
 - Use `--debug` while iterating on setups; add `--log` to persist details.
 - Log files are relative to the input directory and designed to be copy‑paste friendly.
 
-
+<p align="center">
+  <img src="{{ site.baseurl }}/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

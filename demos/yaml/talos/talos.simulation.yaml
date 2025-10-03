@@ -1,0 +1,22 @@
+chrono-version: 9.0
+
+simulation:
+  contact_method: SMC
+  
+  time_step: 0.01
+  end_time: 40.0
+  enforce_realtime: false
+  gravity: [0, 0, -9.8]
+  
+  integrator:
+    type: HHT
+  
+  solver:
+    type: GMRES
+  
+  visualization:
+    type: MODEL_FILE
+    render_fps: 120
+    enable_shadows: true
+    camera:
+      vertical: Z

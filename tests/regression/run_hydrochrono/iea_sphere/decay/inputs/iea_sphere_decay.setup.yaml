@@ -1,0 +1,7 @@
+model_file: iea_sphere_decay.model.yaml
+simulation_file: iea_sphere_decay.simulation.yaml
+hydro_file: iea_sphere_decay.hydro.yaml
+
+# Output directory is authoritative for the runner. Relative to this setup file.
+output_directory: ../outputs
+

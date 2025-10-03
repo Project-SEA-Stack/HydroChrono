@@ -1,0 +1,4 @@
+model_file: iea_sphere.model.yaml
+simulation_file: iea_sphere.simulation.yaml
+hydro_file: iea_sphere.hydro.yaml
+output_directory: results/iea_sphere

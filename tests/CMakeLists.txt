@@ -18,11 +18,15 @@ endif()
 # Note: Regression tests are now handled in tests/regression/CMakeLists.txt
 # and included directly from the main CMakeLists.txt
 
-# Set common test properties, including the PATH environment variable
-# This ensures that test executables can find required DLLs (Chrono, Irrlicht, etc.)
-set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
-set(IRRLICHT_DLL_DIR "C:/libs/irrlicht-1.8.4/bin/Win64-VisualStudio")
-set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}")
+# Expect TEST_ENVIRONMENT to be configured by top-level configure_test_environment().
+# Provide a minimal fallback to avoid failures if not defined.
+if(NOT DEFINED TEST_ENVIRONMENT)
+  set(TEST_ENVIRONMENT "PATH=$ENV{PATH}")
+endif()
+
+# Unit Tests
+# ==========
+add_subdirectory(unit)
 
 # DEMO Sphere irregular waves
 if(TARGET demo_sphere_irreg_waves)
@@ -104,30 +108,11 @@ if(TARGET demo_rm3_decay)
         )
         set_tests_properties(
                 demo_rm3_decay_01
-                PROPERTIES 
-                LABELS "demos;medium;core"
-                FIXTURES_SETUP demo_rm3_decay_01_file
+                PROPERTIES LABELS "demos;medium;core"
                 ENVIRONMENT "${TEST_ENVIRONMENT}"
-        )
-
-        set(FILE_RST ${CMAKE_CURRENT_BINARY_DIR}/results/rm3_decay.txt)
-        set(FILE_REF ${HYDROCHRONO_DATA_DIR}/rm3/postprocessing/rm3_WECSim_decay.txt)
-
-        add_test(NAME demo_rm3_decay_ref
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../demos/rm3/compare.py ${FILE_REF} ${FILE_RST}
-        )
-
-        set_tests_properties(
-                demo_rm3_decay_ref
-                PROPERTIES 
-                LABELS "demos;ref"
-                DEPENDS demo_rm3_decay_01
-                REQUIRED_FILES ${FILE_RST} 
-                FIXTURES_REQUIRED demo_rm3_decay_01_file
         )
 endif() 
 
-# TODO Add comparison - Wait for Dave to send the WECSIM file
 if(TARGET demo_rm3_reg_waves)
         add_test (
                 NAME demo_rm3_reg_waves_01
@@ -135,6 +120,18 @@ if(TARGET demo_rm3_reg_waves)
         )
         set_tests_properties(
                 demo_rm3_reg_waves_01
+                PROPERTIES LABELS "demos;long;core"
+                ENVIRONMENT "${TEST_ENVIRONMENT}"
+        )
+endif() 
+
+if(TARGET demo_rm3_irreg_waves)
+        add_test (
+                NAME demo_rm3_irreg_waves_01
+                COMMAND $<TARGET_FILE:demo_rm3_irreg_waves> ${HYDROCHRONO_DATA_DIR} --nogui
+        )
+        set_tests_properties(
+                demo_rm3_irreg_waves_01
                 PROPERTIES LABELS "demos;long;core"
                 ENVIRONMENT "${TEST_ENVIRONMENT}"
         )
@@ -155,10 +152,10 @@ if(TARGET demo_oswec_decay)
         )
 
         set(FILE_RST ${CMAKE_CURRENT_BINARY_DIR}/results/oswec_decay.txt)
-        set(FILE_REF ${HYDROCHRONO_DATA_DIR}/oswec/postprocessing/wecsim_oswec_decay.txt)
+        set(FILE_REF ${HYDROCHRONO_DATA_DIR}/oswec/postprocessing/ref_oswec_decay.txt )
 
         add_test(NAME demo_oswec_decay_ref
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../demos/oswec/compare.py ${FILE_REF} ${FILE_RST}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../demos/oswec/compare_decay.py ${FILE_REF} ${FILE_RST}
         )
 
         set_tests_properties(

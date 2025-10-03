@@ -1,0 +1,56 @@
+chrono-version: 9.0
+
+model:
+  name: oswec_model
+  angle_degrees: false
+  
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1  # Flap
+      location: [0, 0, -3.9]  # Center of Gravity in global frame (hinge at -8.9 + 5.0)
+      mass: 127000.0
+      fixed: false
+      inertia:
+        moments: [1850000.0, 1850000.0, 1850000.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      orientation: [0, 0.0, 0]  # 10 degrees in radians around Y axis
+      visualization:
+        mesh: oswec_geometry/flap.obj
+
+    - name: body2  # Base
+      location: [0, 0, -10.15]  # Center of Gravity in global frame
+      mass: 999
+      fixed: true  # Base is fixed to ground
+      inertia:
+        moments: [1.0, 1.0, 1.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        mesh: oswec_geometry/base.obj
+
+  joints:
+    - name: base_flap_joint
+      type: REVOLUTE
+      body1: body1
+      body2: body2
+      location: [0.0, 0.0, -8.9]  # Single point defining joint location
+      axis: [0, 1, 0]  # Rotation around Y axis
+
+  rsdas:
+    - name: PTO1
+      type: RSDA  # Rotational spring-damper actuator
+      body1: body1
+      body2: body2
+      location: [0.0, 0.0, -8.9]  # Single point defining actuator location
+      axis: [0, 1, 0]  # Rotation around Y axis
+      spring_coefficient: 0
+      damping_coefficient: 12000000  # Linear damping for the PTO
+      free_angle: 0.0

@@ -1,0 +1,74 @@
+chrono-version: 9.0
+
+model:
+  name: oswec_model
+  angle_degrees: true
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1  # Flap
+      location: [0.868241, 0.000000, -3.975961]
+      orientation: [0.0, 10, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      mass: 127000.0
+      fixed: false
+      inertia:
+        moments: [1850000.0, 1850000.0, 1850000.0]
+        products: [0, 0, 0]
+      visualization:
+        model_file: ../../assets/oswec_geometry/flap.obj
+
+    - name: body2  # Base
+      location: [0, 0, -10.15]
+      mass: 999
+      fixed: false
+      inertia:
+        moments: [999, 999, 999]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../../assets/oswec_geometry/base.obj
+
+    - name: ground
+      location: [0, 0, 0]
+      mass: 999
+      fixed: true
+      inertia:
+        moments: [999, 999, 999]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+
+  joints:
+    - name: base_flap_joint
+      type: REVOLUTE
+      body1: body1
+      body2: body2
+      location: [0.0, 0.0, -8.9]
+      axis: [0, 1, 0]
+
+    - name: base_ground_lock
+      type: LOCK
+      body1: body2
+      body2: ground
+      location: [0.0, 0.0, -10.15]
+
+  # rsdas:
+  #   - name: PTO1
+  #     type: RSDA
+  #     body1: body1
+  #     body2: body2
+  #     location: [0.0, 0.0, -8.9]
+  #     axis: [0, 1, 0]
+  #     spring_coefficient: 0
+  #     damping_coefficient: 0
+  #     free_angle: 0.0
+

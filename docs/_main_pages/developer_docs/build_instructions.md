@@ -4,150 +4,137 @@ title: Building HydroChrono
 parent_section: Developer Documentation
 ---
 
-# Building HydroChrono (and demos)
+# Build & Setup (Windows)
 
-## Introduction
+A PowerShell script (`build.ps1`) is provided to build HydroChrono from the command line. The steps to configure, build, and test with this script are outlined below. Alternatively, you can use the CMake GUI with Visual Studio; those instructions appear later on this page.
 
-This page provides instructions on how to build HydroChrono and its associated demos on Windows.
+## Prerequisites (download/install these)
 
-## Prerequisites
+- Visual Studio 2022 (Desktop development with C++)
+- CMake ≥ 3.18
+- Project Chrono (built from source; enable Parsers and Irrlicht modules)
+- HDF5 1.10.8 (CMake package)
+- Eigen 3.4 (headers)
+- Irrlicht 1.8.4 (if GUI)
+- Python 3.12 (only for tests/docs)
 
-Before attempting to build HydroChrono, ensure you have installed and built all of the required [prerequisites](/developer_docs/prerequisites). The exact versions listed in the prerequisites are essential for proper functionality.
+## Quick build with build.ps1 (recommended)
 
-- CMake 3.16 or higher
-- A C++ compiler (Visual Studio 2019 or higher, or GCC through MinGW/MSYS2)
-- Project Chrono (built from source, tested with v9.0.0 and v9.0.1)
-- HDF5 1.10.8 or higher
-- Python 3.8 or higher (with numpy and matplotlib)
-
-### Additional Python Requirements for Documentation
-If you plan to build the documentation, you'll need these additional Python packages:
-- matplotlib
-- sphinx
-- sphinxcontrib-bibtex
-- breathe
-- h5py
-
-## Clean Build Process
-
-To perform a complete clean rebuild of the project, follow these steps:
-
-1. **Clean the Build Directory**
-   If you have an existing build directory, you can clean it in one of two ways:
-
-   a. **Remove and recreate the build directory** (recommended for a completely fresh start):
-   ```powershell
-   # From the project root
-   Remove-Item -Recurse -Force build
-   mkdir build
-   cd build
-   ```
-
-   b. **Clean using CMake** (if you want to preserve the build directory):
-   ```powershell
-   # From the build directory
-   cmake --build . --target clean
-   ```
-
-2. **Clean CMake Cache** (optional, but recommended for a fresh configuration):
-   ```powershell
-   # From the build directory
-   Remove-Item -Recurse -Force CMakeCache.txt CMakeFiles/
-   ```
-
-3. **Verify Clean State**
-   The build directory should now be empty (if using method a) or contain only CMake-generated files (if using method b).
-
-## Building from the Command Line
-
-This is the recommended way to build HydroChrono.
-
-### Steps to Build
-
-1. **Create a Build Directory**
-   Open PowerShell and navigate to the root of the HydroChrono project. Create a new directory for the build:
-   ```powershell
-   mkdir build
-   cd build
-   ```
-
-2. **Configure the Project**
-   Run CMake to configure the project with the necessary paths. You'll need to specify the paths to your Chrono and HDF5 installations:
-   ```powershell
-   cmake .. -DChrono_DIR="<path_to_chrono_build>/cmake" -DHDF5_DIR="<path_to_hdf5_cmake>" -DPython3_ROOT_DIR="<path_to_python>"
-   ```
-   Note: The Chrono build directory typically contains a `cmake` folder with the Chrono CMake configuration files.
-
-   **⚠️ Important:** The build type (e.g., Release, Debug, RelWithDebInfo) used to build HydroChrono **must match** the build type used when building Project Chrono. On Windows, this is set when running `cmake --build . --config Release`. For more context on build configurations and CMake behavior across platforms, see [CMake Build Configuration Basics](/developer_docs/cmake_build_basics).
-
-3. **Build the Project**
-   Compile the project using the following command:
-   ```powershell
-   cmake --build . --config Release
-   ```
-   The build output will be in the `Release` folder (or `Debug` if you used that configuration).
-
-4. **Run Tests**
-   After building, you can run the tests to ensure everything is working correctly:
-   ```powershell
-   ctest -C Release --output-on-failure
-   ```
-
-## Building with Visual Studio
-
-If you prefer using Visual Studio, you can use the CMake GUI to generate a Visual Studio solution.
-
-1. Open CMake GUI and set the source directory to your HydroChrono directory and the build directory to where you want to build.
-
-2. Configure the project with the following settings:
-   - Set `Chrono_DIR` to the Chrono Build location (the directory containing Chrono's CMake files)
-   - Set `HDF5_DIR` to your HDF5 build location
-   - Enable the following options for additional features: `HYDROCHRONO_ENABLE_DEMOS`, `HYDROCHRONO_ENABLE_IRRLICHT`, and `HYDROCHRONO_ENABLE_TESTS`
-   - To build the docs: set `Python3_ROOT_DIR` to your Python environment with required packages
-
-   **⚠️ Important:** The build type (e.g., Release, Debug, RelWithDebInfo) used to build HydroChrono **must match** the build type used when building Project Chrono. On Windows, this is set when running `cmake --build . --config Release`. For more context on build configurations and CMake behavior across platforms, see [CMake Build Configuration Basics](/developer_docs/cmake_build_basics).
-
-3. Click "Generate" to create the Visual Studio solution.
-
-4. Open the generated solution in Visual Studio and build the project.
-
-## Post-Build Steps
-
-1. Copy the `chrono_build/bin/data` folder from the Project Chrono build directory to your build directory's `data` folder to obtain optional shaders and logos.
-
-2. Copy the following DLL files from your Chrono build directory to your build directory's `demos/Release` folder:
-   - ChronoEngine.dll
-   - ChronoEngine_irrlicht.dll (if using Irrlicht)
-   - Irrlicht.dll (if using Irrlicht)
-
-## Running Demos
-
-1. To run the demos, navigate to your build directory's `demos/Release` folder.
-
-2. Demos require a command line argument indicating the location of input files. To specify this:
-   - Run demo executables from the command line with an argument pointing to the absolute location of `<path>/HydroChrono/demos`.
-
-## Environment Setup
-
-Before running the tests, set the `HYDROCHRONO_DATA_DIR` environment variable to point to the demos directory:
-```powershell
-$env:HYDROCHRONO_DATA_DIR = "C:/path/to/HydroChrono/demos"
+1) Copy `build-config-example.json` to `build-config.json` and set paths:
+```json
+{
+  "ChronoDir": "C:/path/to/chrono/build/cmake",
+  "Hdf5Dir": "C:/path/to/hdf5/share/cmake",
+  "EigenDir": "C:/path/to/eigen-3.4.0",
+  "IrrlichtDir": "C:/path/to/irrlicht-1.8.4",
+  "PythonRoot": "C:/path/to/python/env"
+}
 ```
-Note: Use the absolute path to the demos directory.
+
+2) From the repo root, run (first build) - use `-Verbose` for a more detailed output:
+```powershell
+./build.ps1 -Verbose
+```
+
+3) Create a distributable ZIP (installs to `build/install` and zips it):
+```powershell
+./build.ps1 -Verbose -Package
+```
+
+### Useful switches
+
+- `-BuildType Release|Debug|RelWithDebInfo|MinSizeRel` (default: Release)
+- `-YamlRunner ON|OFF` to include/exclude the YAML runner target (default: ON)
+- `-Clean` remove existing `build/` before configuring
+- `-Package` run `cmake --install` and `cpack` (ZIP)
+- `-ConfigPath <file>` use a different JSON config
+
+What it does:
+- Passes your dependency paths to CMake
+- Builds with VS/MSBuild
+- For `-Package`: stages a flat install tree and creates a ZIP
+
+Install tree layout:
+```
+install/
+  bin/    # run_hydrochrono.exe + DLLs
+  data/   # Chrono visual assets (skybox, colormaps)
+  tests/  # public regression suite (run_hydrochrono)
+```
+
+## Alternative: CMake GUI + Visual Studio
+
+1. Open CMake (GUI)
+    - Source: HydroChrono repo root
+    - Build: `<repo>/build`
+
+2. Configure:
+    - Set `Chrono_DIR` to `<chrono>/build/cmake`
+    - Set `HDF5_DIR`, `Irrlicht_ROOT`, `Python3_ROOT_DIR`, `EIGEN3_INCLUDE_DIR`
+    - Ensure your HydroChrono `CMAKE_MSVC_RUNTIME_LIBRARY` matches Chrono
+
+3. Generate → Open in Visual Studio → Build `run_hydrochrono` (choose the matching config, e.g., Release)
+
+4. Runtime assets
+    - Copy required DLLs next to the exe, or use the `-Package` flow above to stage `install/bin`
+
+
+## Run regression tests (from the source tree)
+
+After a local build, you have two regression test suites - **Option A** uses CTest to test the C++ based HydroChrono models, and **Option B** uses Python to test the main HydroChrono app - `run_hydrochrono.exe` :
+
+**Option A** - CTest:
+```powershell
+ctest -C Release -L regression
+```
+
+  - Common CTest options/examples:
+
+```powershell
+# Show failing test output
+ctest -C Release -L regression --output-on-failure
+
+# Extra verbose output
+ctest -C Release -L regression -VV
+
+# Only run specific tests
+ctest -C Release -R f3of -L regression
+ctest -C Release -R rm3  -L regression
+
+# Run in parallel
+ctest -C Release -j 6 -L regression
+```
+
+**Option B** — Python-based YAML tests for the main executable:
+```powershell
+cd .\tests\regression\run_hydrochrono
+python .\run_tests.py --all --exe ..\..\..\build\bin\Release\run_hydrochrono.exe
+# Run a subset:
+# python .\run_tests.py --sphere-decay --exe ..\..\..\build\bin\Release\run_hydrochrono.exe
+# Optional GUI: add --gui
+```
+
+Outputs:
+- Results (HDF5) and plots are written per case under `tests\regression\run_hydrochrono\<case>\<test>\outputs\`.
+- PASS/FAIL summary and RMSrel are printed to the console.
+
+Note: For the packaged ZIP, use the included `tests\RUN-TESTS.ps1` or run `run_tests.py` with `--exe ..\..\bin\run_hydrochrono.exe`.
+
+### Generate a PDF regression report
+
+Create a consolidated PDF report of results and comparisons:
+```powershell
+python .\tests\regression\utilities\generate_report.py --build-dir .\build --pdf
+```
+This summarizes PASS/FAIL and embeds plots for the standard regression cases.
 
 ## Troubleshooting
 
-If you encounter any issues during the build process:
+- Chrono/HydroChrono build types must match (e.g., both Release, same version of Visual Studio, etc.)
+- `yaml-cpp.dll` or other dlls missing → ensure they are next to the exe
+- GUI skybox missing → ensure `data/skybox/` exists in the install ZIP (packaging now includes it)
+- Python tests: install `numpy`, `h5py`, `PyYAML`, `matplotlib`, or run `tests/RUN-TESTS.ps1`
 
-1. Make sure all dependencies are properly installed and built
-2. Verify that the paths in the CMake command match your local installation directories
-3. Check that the `HYDROCHRONO_DATA_DIR` environment variable is set correctly
-4. Ensure you have the required Python packages installed (numpy and matplotlib)
-5. Verify that all required DLL files are in the correct locations
-6. If using Irrlicht, ensure Project Chrono was built with Irrlicht support
-
-## Additional Resources
-
-- [Project Chrono Documentation](https://api.projectchrono.org/)
-- [HDF5 Documentation](https://portal.hdfgroup.org/display/HDF5/HDF5)
-- [CMake Documentation](https://cmake.org/documentation/)
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

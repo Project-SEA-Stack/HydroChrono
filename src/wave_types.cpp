@@ -475,7 +475,7 @@ std::vector<double> IrregularWaves::GetEtaTimeData() {
 }
 
 void IrregularWaves::ReadEtaFromFile() {
-    std::cout << "Reading eta file " << params_.eta_file_path_ << "." << std::endl;
+    hydroc::debug::LogDebug(std::string("Reading eta file ") + params_.eta_file_path_ + ".");
     std::ifstream file(params_.eta_file_path_);
     if (!file) {
         throw std::runtime_error("Unable to open file at: " + params_.eta_file_path_ + ".");
@@ -493,7 +493,7 @@ void IrregularWaves::ReadEtaFromFile() {
         time_data_.push_back(time);
         free_surface_elevation_sampled_.push_back(eta);
     }
-    std::cout << "Finished reading eta file." << std::endl;
+    hydroc::debug::LogDebug("Finished reading eta file.");
 }
 
 Eigen::MatrixXd IrregularWaves::GetExcitationIRF(int b) const {
@@ -683,7 +683,7 @@ void IrregularWaves::CreateSpectrum() {
         // Close the file stream
         outputFile.close();
     } else {
-        std::cerr << "Unable to open file for writing." << std::endl;
+        hydroc::cli::LogError("Unable to open file for writing.");
     }
 }
 
@@ -755,9 +755,9 @@ void IrregularWaves::CreateFreeSurfaceElevation() {
         free_surface_time_sampled_[ii] += -t_irf_max;
     }
 
-    std::cout << "Precalculating free surface elevation from " + std::to_string(free_surface_time_sampled_.front()) +
-                     " to " + std::to_string(free_surface_time_sampled_.back()) + "."
-              << std::endl;
+    hydroc::debug::LogDebug(std::string("Precalculating free surface elevation from ") +
+                            std::to_string(free_surface_time_sampled_.front()) + " to " +
+                            std::to_string(free_surface_time_sampled_.back()) + ".");
 
     // Calculate the free surface elevation
     // position assumed at (0.0, 0.0, 0.0)
@@ -793,10 +793,10 @@ void IrregularWaves::CreateFreeSurfaceElevation() {
         // Close the file stream
         eta_output.close();
     } else {
-        std::cerr << "Unable to open file for writing." << std::endl;
+        hydroc::cli::LogError("Unable to open file for writing.");
     }
 
-    std::cout << "Finished precalculating free surface elevation." << std::endl;
+    hydroc::debug::LogDebug("Finished precalculating free surface elevation.");
 }
 
 double IrregularWaves::ExcitationConvolution(int body, int dof, double time) {

@@ -1,0 +1,9 @@
+# HydroChrono Setup File
+# Centralized configuration for slider crank simulation
+
+model_file: slider_crank.model.yaml
+simulation_file: slider_crank.simulation.yaml
+
+# Future features (not yet implemented)
+hydro_file: slider_crank.hydro.yaml          # (not used yet)
+output_directory: results/slider_crank       # (optional, not used yet) 

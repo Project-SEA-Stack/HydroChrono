@@ -1,244 +1,340 @@
 /**
  * @file logging.h
- * @brief Thread-safe logging system for HydroChrono
+ * @brief Unified logging system for HydroChrono
  * 
- * This header provides a simple, thread-safe logging system that can be enabled
- * via the --debug command line argument. Logs are written to files in a
- * 'hydrochrono_logs' directory with timestamps and system information.
+ * This header provides the main public interface for the HydroChrono logging system.
+ * It includes configuration structures, initialization functions, and namespace-based
+ * APIs for CLI and debug logging.
  * 
- * @note This logging system is designed to be thread-safe and can be used from
- *       multiple threads simultaneously. All logging operations are protected
- *       by a mutex to prevent interleaved output.
- * 
- * @warning If logging is enabled, log files will be created in a 'hydrochrono_logs'
- *          directory next to the executable. Ensure the application has write
- *          permissions in this location.
+ * @note This is the primary public interface for logging in HydroChrono.
+ * @note All logging operations are thread-safe when properly configured.
+ * @note The system supports both CLI and debug logging modes.
+
  */
 
 #pragma once
 
-#include <iostream>
-#include <iomanip>
-#include <mutex>
-#include <fstream>
-#include <filesystem>
+#include <cstddef>
 #include <chrono>
-#include <ctime>
-#include <cstdlib>
-#include <string>
 #include <sstream>
+#include <string>
+#include <vector>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <sysinfoapi.h>
-#elif defined(__APPLE__)
-#include <mach-o/dyld.h>
-#else
-#include <unistd.h>
-#include <limits.h>
-#endif
-
-// Version information - these should be defined by the build system
+// Version information - these may be provided by the build system
 #ifndef HYDROCHRONO_VERSION
-    constexpr const char* HYDROCHRONO_VERSION = "unknown";  ///< HydroChrono version string
+    #define HYDROCHRONO_VERSION "unknown"
 #endif
 #ifndef CHRONO_VERSION
-    constexpr const char* CHRONO_VERSION = "unknown";       ///< Chrono version string
+    #define CHRONO_VERSION "unknown"
 #endif
 #ifndef HYDROCHRONO_BUILD_TYPE
-    constexpr const char* HYDROCHRONO_BUILD_TYPE = "unknown";  ///< Build type (Debug/Release/etc)
+    #define HYDROCHRONO_BUILD_TYPE "unknown"
 #endif
 
 namespace hydroc {
 
-/**
- * @class Logger
- * @brief Static logging class that provides thread-safe file logging functionality
- * 
- * The Logger class provides a simple interface for logging debug, trace, and error
- * messages to a file. Logging can be enabled via the --debug flag. All logging
- * operations are thread-safe.
- * 
- * @note This is a static class - all members and methods are static.
- * @note Logging is disabled by default and must be enabled via --debug flag.
- * @note All logging operations are protected by a mutex for thread safety.
- * 
- * @throw std::runtime_error if log file cannot be created or written to
- */
-class Logger {
-public:
-    /**
-     * @brief Initialize the logging system
-     * @param argc Command line argument count
-     * @param argv Command line arguments
-     * 
-     * Checks for --debug flag and initializes logging if present.
-     * Creates log directory and file with system information.
-     * 
-     * @throw std::runtime_error if log directory cannot be created
-     * @throw std::runtime_error if log file cannot be opened
-     */
-    static void init_logging(int argc, char** argv);
+// Minimal shared log types
+enum class LogLevel { Debug = 0, Info = 1, Success = 2, Warning = 3, Error = 4 };
+enum class LogColor { White, Green, Yellow, Red, Cyan, Blue, Gray, BrightWhite, BrightCyan, BrightGreen };
 
-    /**
-     * @brief Clean up logging resources
-     * 
-     * Writes footer to log file and closes it.
-     * This function is called automatically at program exit.
-     */
-    static void cleanup_logging() noexcept;
+// Keep this in sync with LogLevel.
+constexpr size_t kNumLogLevels = static_cast<size_t>(LogLevel::Error) + 1;
+static_assert(static_cast<int>(LogLevel::Error) == 4, "Update kNumLogLevels when LogLevel changes.");
 
-    /**
-     * @brief Check if logging is enabled
-     * @return true if logging is enabled, false otherwise
-     * 
-     * @note This function is thread-safe
-     */
-    static inline bool is_logging_enabled() noexcept { return logging_enabled; }
-
-    /**
-     * @brief Get the name of the current executable
-     * @return The executable name (e.g., "demo_rm3_reg_waves.exe")
-     * 
-     * Platform-specific implementation to retrieve the executable name.
-     * 
-     * @note This function is thread-safe
-     */
-    static std::string get_executable_name() noexcept;
-
-    /**
-     * @brief Log a message with the specified level
-     * @param level The log level (e.g., "DEBUG", "ERROR", "TRACE")
-     * @param msg The message to log
-     * 
-     * Thread-safe logging of a message with the specified level.
-     * Only logs if logging is enabled.
-     * 
-     * @note This function is thread-safe
-     * @note No-op if logging is disabled
-     */
-    static void log_message(const std::string& level, const std::string& msg) noexcept;
-
-    /**
-     * @brief Get a stream for logging with the specified level
-     * @param level The log level (e.g., "DEBUG", "ERROR", "TRACE")
-     * @return A stream that can be used to build a log message
-     * 
-     * Thread-safe logging of a formatted message with the specified level.
-     * Only logs if logging is enabled.
-     * 
-     * @note This function is thread-safe
-     * @note No-op if logging is disabled
-     */
-    static std::ostream& log_stream(const std::string& level) noexcept;
-
-private:
-    /// Mutex to ensure thread-safe access to the log file
-    static std::mutex log_mutex;
-    
-    /// Output file stream for writing log messages
-    static std::ofstream log_file;
-    
-    /// Flag indicating whether logging is currently enabled
-    static bool logging_enabled;
-
-    /**
-     * @brief Check command line arguments for --debug flag
-     * @param argc Command line argument count
-     * @param argv Command line arguments
-     * @return true if --debug flag is present, false otherwise
-     * 
-     * @note This function is thread-safe
-     */
-    static inline bool check_debug_flag(int argc, char** argv) noexcept;
-
-    /**
-     * @brief Get the full path of the current executable
-     * @return The full path to the executable
-     * 
-     * Platform-specific implementation to retrieve the executable path.
-     * Used to determine where to create the log directory.
-     * 
-     * @note This function is thread-safe
-     */
-    static std::string get_executable_path() noexcept;
-
-    /**
-     * @brief Initialize the log file
-     * 
-     * Creates the log directory if it doesn't exist and opens a new log file
-     * with a timestamp in the filename.
-     * 
-     * @throw std::runtime_error if log directory cannot be created
-     * @throw std::runtime_error if log file cannot be opened
-     */
-    static void init_log_file();
-
-    /**
-     * @brief Write initial log file header
-     * @param argc Command line argument count
-     * @param argv Command line arguments
-     * 
-     * Writes system information, version numbers, and command line arguments
-     * to the log file header.
-     * 
-     * @throw std::runtime_error if log file cannot be written to
-     */
-    static void log_boilerplate(int argc, char** argv);
-
-    /**
-     * @brief Write log file footer
-     * 
-     * Writes the closing timestamp and separator to the log file.
-     * 
-     * @throw std::runtime_error if log file cannot be written to
-     */
-    static void log_footer();
+struct LogContext {
+    std::string source_file;
+    int source_line = 0;
+    std::string function_name;
+    std::string thread_id;
+    std::string component;
+    std::chrono::system_clock::time_point timestamp;
+    LogContext() : timestamp(std::chrono::system_clock::now()) {}
 };
 
-/**
- * @def LOG_DEBUG(msg)
- * @brief Log a debug message
- * @param msg The message to log
- * 
- * Only logs if logging is enabled. Thread-safe.
- * 
- * @note This macro is thread-safe
- * @note No-op if logging is disabled
- */
-#define LOG_DEBUG(msg) \
-    if (hydroc::Logger::is_logging_enabled()) { \
-        hydroc::Logger::log_stream("DEBUG") << msg; \
-    }
+// Utility helpers
+std::string LogLevelToString(LogLevel level) noexcept;
+std::string GetColorCode(LogColor color) noexcept;
+std::string GetTimestamp();
+std::string GetTimestampISO8601();
+int GetVisibleWidth(const std::string& str);
+std::string FormatNumber(double value, int decimal_places = 2);
 
 /**
- * @def LOG_ERROR(msg)
- * @brief Log an error message
- * @param msg The message to log
- * 
- * Only logs if logging is enabled. Thread-safe.
- * 
- * @note This macro is thread-safe
- * @note No-op if logging is disabled
+ * @brief Configuration for the logging system
+ *
+ * Controls various aspects of logging behavior including
+ * output destinations, verbosity levels, and file management.
  */
-#define LOG_ERROR(msg) \
-    if (hydroc::Logger::is_logging_enabled()) { \
-        hydroc::Logger::log_stream("ERROR") << msg; \
-    }
+struct LoggingConfig {
+    std::string log_file_path;           ///< Path for log file (empty = no file logging)
+    bool enable_cli_output = true;       ///< Enable console output
+    bool enable_file_output = true;      ///< Enable file output
+    bool enable_debug_logging = false;   ///< Enable debug-level logging
+    // Verbosity thresholds (use LogLevel)
+    LogLevel console_level = LogLevel::Info;   ///< Minimum level for console output
+    LogLevel file_level = LogLevel::Debug;     ///< Minimum level for file output
+    bool enable_colors = true;           ///< Enable ANSI color codes in console
+    bool enable_timestamps = true;       ///< Include timestamps in log messages
+    bool enable_source_location = false; ///< Include source location in debug logs
+    
+    LoggingConfig() = default;
+};
+
+//-----------------------------------------------------------------------------
+// Main Logging Interface
+//-----------------------------------------------------------------------------
 
 /**
- * @def LOG_TRACE(msg)
- * @brief Log a trace message
- * @param msg The message to log
- * 
- * Only logs if logging is enabled. Thread-safe.
- * 
- * @note This macro is thread-safe
- * @note No-op if logging is disabled
+ * @brief Initialize the logging system.
+ * @param config Configuration for the logging system.
  */
-#define LOG_TRACE(msg) \
-    if (hydroc::Logger::is_logging_enabled()) { \
-        hydroc::Logger::log_stream("TRACE") << msg; \
-    }
+[[nodiscard]] bool Initialize(const LoggingConfig& config);
 
-} // namespace hydroc 
+/**
+ * @brief Shutdown the logging system.
+ *
+ * Performs cleanup of logging resources. Call at program end to ensure
+ * logs are flushed and intercepted streams are restored.
+ *
+ * @note This function is safe to call multiple times.
+ */
+void Shutdown();
+
+/**
+ * @brief Check if logging is initialized.
+ * @return true if the logging system is initialized and ready.
+ * @note All functions are thread-safe after Initialize() returns true; internal
+ *       synchronization is handled by the logging library.
+ */
+[[nodiscard]] bool IsInitialized() noexcept;
+
+//-----------------------------------------------------------------------------
+// CLI Logging Namespace
+//-----------------------------------------------------------------------------
+
+/**
+ * @brief CLI-focused logging namespace
+ * 
+ * Provides convenient functions for user-facing logging operations.
+ * These functions delegate to the current CLI logger instance.
+ */
+namespace cli {
+
+/**
+ * @brief Log an informational message
+ * @param message Message content
+ */
+void LogInfo(const std::string& message);
+
+/**
+ * @brief Log a success message (green)
+ * @param message Message content
+ */
+void LogSuccess(const std::string& message);
+
+/**
+ * @brief Log a warning message (yellow)
+ * @param message Message content
+ */
+void LogWarning(const std::string& message);
+
+/**
+ * @brief Log an error message (red)
+ * @param message Message content
+ */
+void LogError(const std::string& message);
+
+/**
+ * @brief Log a debug message (only if debug logging is enabled)
+ * @param message Message content
+ */
+void LogDebug(const std::string& message);
+
+/**
+ * @brief Display the HydroChrono banner
+ */
+void ShowBanner();
+
+/**
+ * @brief Display a section separator
+ */
+void ShowSectionSeparator();
+
+/**
+ * @brief Display an empty line for spacing
+ */
+void ShowEmptyLine();
+
+ /**
+  * @brief Display a flat section header line with normalized width (60 chars)
+  * @param title Title text (may include emojis/multibyte)
+  */
+ void ShowHeader(const std::string& title);
+
+/**
+ * @brief Display a section box with title and content
+ * @param title Section title
+ * @param content_lines Vector of content lines
+ */
+void ShowSectionBox(const std::string& title,
+                   const std::vector<std::string>& content_lines);
+
+/**
+ * @brief Display wave model parameters
+ * @param wave_type Type of wave model
+ * @param height Wave height in meters
+ * @param period Wave period in seconds
+ * @param direction Wave direction in degrees (optional)
+ * @param phase Wave phase in degrees (optional)
+ */
+void ShowWaveModel(const std::string& wave_type, double height,
+                   double period, double direction = 0.0, double phase = 0.0);
+
+/**
+ * @brief Display simulation completion results
+ * @param final_time Final simulation time in seconds
+ * @param steps Total number of simulation steps
+ * @param wall_time Total wall-clock time in seconds
+ */
+void ShowSimulationResults(double final_time, int steps, double wall_time);
+
+/**
+ * @brief Display log file location
+ * @param log_path Path to the log file
+ */
+void ShowLogFileLocation(const std::string& log_path);
+
+/**
+ * @brief Display the application footer
+ */
+void ShowFooter();
+
+/**
+ * @brief Collect a warning for later display
+ * @param warning_message Warning to collect
+ */
+void CollectWarning(const std::string& warning_message);
+
+/**
+ * @brief Display all collected warnings
+ */
+void DisplayWarnings();
+
+// Additional helpers used by apps
+void ShowSummaryLine(const std::string& icon, const std::string& label,
+                     const std::string& value, LogColor color = LogColor::White);
+std::string CreateAlignedLine(const std::string& icon, const std::string& label, const std::string& value);
+
+// Progress helpers (quiet mode visual feedback)
+void ShowProgress(size_t current, size_t total, const std::string& message = "");
+void StopProgress();
+
+} // namespace cli
+
+//-----------------------------------------------------------------------------
+// Debug Logging Namespace
+//-----------------------------------------------------------------------------
+
+/**
+ * @brief Debug-focused logging namespace.
+ * 
+ * Provides convenient functions for developer-facing logging operations.
+ * These functions delegate to the current debug logger instance.
+ */
+namespace debug {
+
+/**
+ * @brief Log a debug message.
+ * @param message Debug message content
+ */
+void LogDebug(const std::string& message);
+
+/**
+ * @brief Log a trace message (most verbose level).
+ * @param message Trace message content
+ */
+void LogTrace(const std::string& message);
+
+/**
+ * @brief Log an informational message.
+ * @param message Info message content
+ */
+void LogInfo(const std::string& message);
+
+/**
+ * @brief Log a warning message.
+ * @param message Warning message content
+ */
+void LogWarning(const std::string& message);
+
+/**
+ * @brief Log an error message.
+ * @param message Error message content
+ */
+void LogError(const std::string& message);
+
+/**
+ * @brief Check if debug logging is enabled.
+ * @return true if debug logging is enabled
+ */
+[[nodiscard]] bool IsDebugEnabled() noexcept;
+
+} // namespace debug
+
+} // namespace hydroc
+
+//-----------------------------------------------------------------------------
+// Convenience Macros
+//-----------------------------------------------------------------------------
+
+// Variadic stream-friendly macros that build a string with operator<<.
+
+#define HC_BUILD_LOG_STRING(...) \
+    std::ostringstream hc_oss__; \
+    hc_oss__ << __VA_ARGS__; \
+    const std::string hc_msg__ = hc_oss__.str();
+
+// Debug/trace -> debug logger if available
+#define LOG_DEBUG(...) \
+    do { \
+        if (hydroc::debug::IsDebugEnabled()) { \
+            HC_BUILD_LOG_STRING(__VA_ARGS__); \
+            hydroc::debug::LogDebug(hc_msg__); \
+        } \
+    } while (0)
+
+#define LOG_TRACE(...) \
+    do { \
+        if (hydroc::debug::IsDebugEnabled()) { \
+            HC_BUILD_LOG_STRING(__VA_ARGS__); \
+            hydroc::debug::LogTrace(hc_msg__); \
+        } \
+    } while (0)
+
+// Info/Warning/Error/Success helpers for convenience
+#define LOG_INFO(...) \
+    do { \
+        HC_BUILD_LOG_STRING(__VA_ARGS__); \
+        hydroc::cli::LogInfo(hc_msg__); \
+    } while (0)
+
+#define LOG_WARNING(...) \
+    do { \
+        HC_BUILD_LOG_STRING(__VA_ARGS__); \
+        hydroc::cli::LogWarning(hc_msg__); \
+    } while (0)
+
+#define LOG_ERROR(...) \
+    do { \
+        HC_BUILD_LOG_STRING(__VA_ARGS__); \
+        hydroc::cli::LogError(hc_msg__); \
+    } while (0)
+
+#define LOG_SUCCESS(...) \
+    do { \
+        HC_BUILD_LOG_STRING(__VA_ARGS__); \
+        hydroc::cli::LogSuccess(hc_msg__); \
+    } while (0)
+
+// Function entry/exit and variable logging macros were removed to avoid
+// implying features that are not implemented yet. Add back when needed.

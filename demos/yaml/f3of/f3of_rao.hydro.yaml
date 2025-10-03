@@ -1,0 +1,21 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hydroData/f3of.h5
+
+    - name: body2
+      h5_file: hydroData/f3of.h5
+
+    - name: body3
+      h5_file: hydroData/f3of.h5
+
+  waves:
+    type: regular
+    height: 0.01
+    # period: 8.0
+    period:
+      #values: [6.0, 7.0, 8.0, 9.0]
+      #linspace: { start: 2.0, stop: 5.0, num: 4 }
+      range: { start: 10.0, stop: 13.0, step: 1.0, inclusive: true }
+    direction: 0.0  # degrees, 0 = positive x
+    phase: 0.0 

@@ -172,3 +172,7 @@ Foo::~Foo() noexcept = default;
 - [ ] Exceptions are specific; error messages add context
 - [ ] Logging used for user-facing messages (no stray `cout`)
 - [ ] Tests updated/added when logic changes
+
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

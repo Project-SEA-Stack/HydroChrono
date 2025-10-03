@@ -160,3 +160,6 @@ run_hydrochrono.exe .\my_model\my_model.setup.yaml
 Outputs are written to `my_model/outputs/`.
 
 
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

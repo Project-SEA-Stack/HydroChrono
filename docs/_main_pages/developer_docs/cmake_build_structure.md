@@ -153,3 +153,6 @@ CPack (ZIP): `cpack -C Release` yields a ready‑to‑share artifact.
 - [CMake Build Basics](cmake_build_basics)
 - [Project Chrono Documentation](https://api.projectchrono.org/)
 
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

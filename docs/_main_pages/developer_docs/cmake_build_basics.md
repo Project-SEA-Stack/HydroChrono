@@ -67,3 +67,7 @@ cmake --build build --config Debug
 
 - [CMake: CMAKE\_BUILD\_TYPE](https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html)
 - [CMake: CMAKE\_CONFIGURATION\_TYPES](https://cmake.org/cmake/help/latest/variable/CMAKE_CONFIGURATION_TYPES.html)
+
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

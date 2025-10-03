@@ -66,3 +66,6 @@ Then open `http://localhost:4000/HydroChrono/`.
 - First run fetches the remote theme; ensure internet connectivity.
 
 
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

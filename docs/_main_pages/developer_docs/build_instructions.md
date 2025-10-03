@@ -134,3 +134,7 @@ This summarizes PASS/FAIL and embeds plots for the standard regression cases.
 - `yaml-cpp.dll` or other dlls missing → ensure they are next to the exe
 - GUI skybox missing → ensure `data/skybox/` exists in the install ZIP (packaging now includes it)
 - Python tests: install `numpy`, `h5py`, `PyYAML`, `matplotlib`, or run `tests/RUN-TESTS.ps1`
+
+<p align="center">
+  <img src="https://nrel.github.io/HydroChrono/assets/img/wave_animation2.gif" alt="Wave Energy" width="80%" />
+</p>

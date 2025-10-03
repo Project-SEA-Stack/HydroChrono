@@ -19,6 +19,7 @@
         .\build.ps1 -Help                    # Show help
         .\build.ps1 -BuildType Release       # Build with options
         .\build.ps1 -Verbose -Clean          # Verbose clean build
+        .\build.ps1 -Package                 # Build, install to build\install, create ZIP via CPack
         
     Configuration:
         This script requires a build-config.json file with your local paths.
@@ -32,6 +33,7 @@ param(
     [Alias("h")][switch]$Help,
     [Alias("v")][switch]$Verbose,
     [Alias("p")][switch]$Package,
+    [Alias("disabletests","nt")][switch]$NoTests,
     [Alias("log")][string]$LogFile = "",
     [Alias("config")][string]$ConfigPath = ".\build-config.json"
 )
@@ -232,22 +234,24 @@ function Show-Help {
     Write-Host "Usage: .\build.ps1 [OPTIONS]" -ForegroundColor White
     
     Write-Section "Build Options"
-    Write-Host "  -YamlRunner ON|OFF     Enable/disable YAML-based CLI runner (default: ON)" -ForegroundColor White
+    Write-Host "  -YamlRunner ON|OFF     Enable/disable YAML-based CLI runner (default: OFF)" -ForegroundColor White
     Write-Host "  -BuildType TYPE        Build type: Debug|Release|RelWithDebInfo|MinSizeRel (default: Release)" -ForegroundColor White
     Write-Host "  -Clean                 Clean build (remove build directory before building)" -ForegroundColor White
     Write-Host "  -Verbose               Enable verbose output" -ForegroundColor White
     Write-Host "  -Package               Install to build\\install and create ZIP via CPack" -ForegroundColor White
+    Write-Host "  -NoTests               Disable CTest targets (tests are ON by default)" -ForegroundColor White
     Write-Host "  -Help                  Show this help message" -ForegroundColor White
     Write-Host "  -LogFile PATH          Write build log to specified file (alias: -log)" -ForegroundColor White
     Write-Host "  -ConfigPath PATH       Use custom configuration file (alias: -config)" -ForegroundColor White
     
     Write-Section "Quick Examples"
-    Write-Host "  .\build.ps1                           # Default build (Release, YamlRunner=ON)" -ForegroundColor Gray
-    Write-Host "  .\build.ps1 -YamlRunner OFF          # Build without YAML runner" -ForegroundColor Gray
-    Write-Host "  .\build.ps1 -BuildType Debug         # Debug build" -ForegroundColor Gray
-    Write-Host "  .\build.ps1 -Clean -BuildType Debug  # Clean debug build" -ForegroundColor Gray
-    Write-Host "  .\build.ps1 -Verbose                 # Verbose build with detailed output" -ForegroundColor Gray
-    Write-Host "  .\build.ps1 -ConfigPath custom.json  # Use custom config file" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1                           # Default build (Release, YamlRunner=OFF)" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -YamlRunner OFF          # Build without YAML runner" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -BuildType Debug         # Debug build" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -Clean -BuildType Debug  # Clean debug build" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -Verbose                 # Verbose build with detailed output" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -Package                 # Build+install to build\\install and create ZIP" -ForegroundColor Gray
+    Write-Host "  .\\build.ps1 -ConfigPath custom.json  # Use custom config file" -ForegroundColor Gray
     
     Write-Section "Build Types Explained"
     Write-Host "  Release        # Optimized build for production (default)" -ForegroundColor Gray
@@ -378,7 +382,7 @@ function Configure-CMake {
     Write-Info "Irrlicht DIR: $($Config.IrrlichtDir)"
     Write-Info "Python ROOT:  $($Config.PythonRoot)"
     
-    $cmakeArgs = Get-BuildArguments -YamlRunner $YamlRunner -BuildType $BuildType
+    $cmakeArgs = Get-BuildArguments -YamlRunner $YamlRunner -BuildType $BuildType -NoTests $NoTests
     
     Write-Subsection "Running CMake Configure"
     Write-Progress "Setting up project configuration..."
@@ -491,6 +495,38 @@ function Copy-ChronoDLLs {
     }
 }
 
+function Copy-HDF5DLLs {
+    Write-Section "Copying HDF5 Runtime DLLs"
+    try {
+        $hdf5Root = $Config.Hdf5Dir
+        # If a share/cmake path was provided, climb to root (two parents)
+        if ($hdf5Root -match "share\\cmake" -or $hdf5Root -match "share/cmake") {
+            $hdf5Root = Split-Path -Parent (Split-Path -Parent $hdf5Root)
+        }
+        $hdf5Bin = Join-Path $hdf5Root "bin"
+        if (-not (Test-Path $hdf5Bin)) {
+            Write-Info "HDF5 bin directory not found: $hdf5Bin (skipping)"
+            return $true
+        }
+        $destBin = Join-Path (Get-Location) "bin\$BuildType"
+        if (-not (Test-Path $destBin)) {
+            New-Item -ItemType Directory -Path $destBin -Force | Out-Null
+        }
+        $dlls = Get-ChildItem -Path $hdf5Bin -Filter "*.dll" -ErrorAction SilentlyContinue
+        $count = 0
+        foreach ($dll in $dlls) {
+            $destPath = Join-Path $destBin $dll.Name
+            Copy-Item -Path $dll.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
+            if (Test-Path $destPath) { $count++ }
+        }
+        if ($count -gt 0) { Write-Success "Copied $count HDF5 DLL(s) to $destBin" } else { Write-Info "No HDF5 DLLs copied" }
+        return $true
+    } catch {
+        Write-Warning "Error during HDF5 DLL copy: $($_.Exception.Message)"
+        return $true
+    }
+}
+
 function Show-BuildSummary {
     Write-Section "Build Summary"
     
@@ -567,17 +603,33 @@ function Get-BuildArguments {
     $irrlicht   = ($Config.IrrlichtDir -replace '\\','/')
     $irrlichtDllWin = Join-Path $Config.IrrlichtDir "bin\Win64-VisualStudio\Irrlicht.dll"
     $irrlichtDll = ($irrlichtDllWin -replace '\\','/')
+
+    # Deterministic prefix path so our roots win over ambient environment
+    $prefixParts = @()
+    foreach ($p in @($Config.ChronoDir, $Config.Hdf5Dir, $Config.EigenDir, $Config.IrrlichtDir, $Config.PythonRoot)) {
+        if ($p -and (Test-Path $p)) { $prefixParts += ($p -replace '\\','/') }
+    }
+    $prefixPath = ($prefixParts -join ';')
+    $testsFlag = if ($NoTests) { "OFF" } else { "ON" }
     
     return @(
         "..",
+        "-G","Visual Studio 17 2022",
+        "-A","x64",
         "-DChrono_DIR=`"$chronoDir`"",
+        "-DHDF5_ROOT=`"$hdf5Dir`"",
         "-DHDF5_DIR=`"$hdf5Dir`"",
         "-DPython3_ROOT_DIR=`"$pythonRoot`"",
         "-DEIGEN3_INCLUDE_DIR=`"$eigenDir`"",
         "-DIrrlicht_ROOT=`"$irrlicht`"",
         "-DIRRLICHT_DLL_PATH=`"$irrlichtDll`"",
+        "-DCMAKE_PREFIX_PATH=`"$prefixPath`"",
+        "-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON",
+        "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",
+        "-DCMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH=OFF",
         "-DCHRONO_DATA_DIR=`"$($Config.ChronoDir -replace '/cmake$','' -replace '\\cmake$','')/../bin/data/`"",
         "-DHYDROCHRONO_ENABLE_YAML_RUNNER=`"$YamlRunner`"",
+        "-DHYDROCHRONO_ENABLE_TESTS=`"$testsFlag`"",
         "-DCMAKE_BUILD_TYPE=`"$BuildType`"",
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=`"$($Config.RuntimeLibrary)`""
     )
@@ -675,6 +727,20 @@ function Package-Artifacts {
                 }
             }
         }
+        # Copy HDF5 runtime DLLs into install\bin
+        $hdf5Root = $Config.Hdf5Dir
+        if ($hdf5Root -match "share\\cmake" -or $hdf5Root -match "share/cmake") {
+            $hdf5Root = Split-Path -Parent (Split-Path -Parent $hdf5Root)
+        }
+        $hdf5Bin = Join-Path $hdf5Root "bin"
+        if (Test-Path $hdf5Bin) {
+            Get-ChildItem -Path $hdf5Bin -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+                $dest = Join-Path $installBin $_.Name
+                if (-not (Test-Path $dest)) {
+                    Copy-Item -Path $_.FullName -Destination $dest -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
         # Also copy DLLs from this project's build bin (Release/Debug) into install\bin
         $hcDllSource = Join-Path (Get-Location) "bin\$BuildType"
         if (Test-Path $hcDllSource) {
@@ -760,6 +826,7 @@ try {
     Write-Info "Build Type:  $BuildType"
     Write-Info "Clean Build: $Clean"
     Write-Info "Verbose:     $Verbose"
+    Write-Info "Tests:       $([bool](-not $NoTests))"
     
     # Check dependencies
     if (-not (Test-Dependencies)) {
@@ -797,6 +864,7 @@ try {
     
     # Copy dependencies
     Copy-ChronoDLLs | Out-Null
+    Copy-HDF5DLLs | Out-Null
     
     # Show summary
     Show-BuildSummary

@@ -7,6 +7,8 @@ cmake_minimum_required(VERSION 3.18.2)
 
 # CMP0091: Enable MSVC runtime library selection via CMAKE_MSVC_RUNTIME_LIBRARY
 cmake_policy(SET CMP0091 NEW)
+# CMP0074: Use <PackageName>_ROOT variables for find_package()
+cmake_policy(SET CMP0074 NEW)
 
 # Guard against in-source builds to prevent polluting source directory
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
@@ -86,6 +88,11 @@ include_directories(${CMAKE_BINARY_DIR}/generated)
 # Add the cmake folder so the FindSphinx module is found
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
+# Deterministic dependency discovery (avoid ambient PATH/registry drift)
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH OFF)
+
 # Force Release by default so CI builds are optimized and users get good performance
 if(NOT DEFINED HYDROCHRONO_DEFAULT_BUILD_TYPE)
 	set(HYDROCHRONO_DEFAULT_BUILD_TYPE "Release")
@@ -104,9 +111,9 @@ endif()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 option(HYDROCHRONO_ENABLE_TESTS "Enable tests" ON)
-option(HYDROCHRONO_ENABLE_IRRLICHT "Enable irrlicht visualization library" ON)
-option(HYDROCHRONO_ENABLE_DEMOS "Enable demo executables" ON)
-option(HYDROCHRONO_ENABLE_YAML_RUNNER "Enable YAML-based CLI runner" ON)
+option(HYDROCHRONO_ENABLE_IRRLICHT "Enable irrlicht visualization library" OFF)
+option(HYDROCHRONO_ENABLE_DEMOS "Enable demo executables" OFF)
+option(HYDROCHRONO_ENABLE_YAML_RUNNER "Enable YAML-based CLI runner" OFF)
 option(HYDROCHRONO_ENABLE_USER_DOC "User's documentation" OFF)
 option(HYDROCHRONO_ENABLE_PROG_DOC "Programmer's documentation" OFF)
 option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
@@ -120,6 +127,9 @@ option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
 # as the one used to build the Chrono libraries.
 set(CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD ${CHRONO_CXX_STANDARD})
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 
 # Add Chrono's cmake path so its custom FindIrrlicht module is discoverable
 if(DEFINED Chrono_DIR)
@@ -164,10 +174,20 @@ else()
 endif()
 
 # ── HDF5 Integration ──
-# Force static linking to avoid DLL deployment issues
-set(HDF5_USE_STATIC_LIBRARIES ON)
+# Prefer config package at provided root; avoid environment/registry
+if(DEFINED HDF5_DIR AND NOT DEFINED HDF5_ROOT)
+  set(HDF5_ROOT "${HDF5_DIR}")
+endif()
 set(HDF5_ROOT "${HDF5_ROOT}" CACHE PATH "HDF5 root directory")
-find_package(HDF5 REQUIRED COMPONENTS CXX)
+if(DEFINED HDF5_ROOT)
+  # Prepend so our supplied root wins
+  if(CMAKE_PREFIX_PATH)
+    set(CMAKE_PREFIX_PATH "${HDF5_ROOT};${CMAKE_PREFIX_PATH}")
+  else()
+    set(CMAKE_PREFIX_PATH "${HDF5_ROOT}")
+  endif()
+endif()
+find_package(HDF5 CONFIG REQUIRED COMPONENTS CXX)
 
 # ---- Eigen: support both CONFIG and module modes ----
 find_package(Eigen3 QUIET CONFIG)
@@ -281,6 +301,13 @@ endfunction()
 function(configure_test_environment)
 	# Set up DLL search paths for Windows testing
 	set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
+	# Always include our build output bin directories for all common configs
+	set(HC_BIN_DIRS "${CMAKE_BINARY_DIR}/bin/Release;${CMAKE_BINARY_DIR}/bin/RelWithDebInfo;${CMAKE_BINARY_DIR}/bin/MinSizeRel;${CMAKE_BINARY_DIR}/bin/Debug")
+	# Include HDF5 bin if available to stabilize test runtime on clean systems
+	set(HDF5_DLL_DIR "")
+	if(DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/bin")
+		set(HDF5_DLL_DIR "${HDF5_ROOT}/bin")
+	endif()
 	# Derive Irrlicht DLL dir from Irrlicht_ROOT provided by user config
 	set(IRRLICHT_DLL_DIR "")
 	if(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
@@ -289,9 +316,17 @@ function(configure_test_environment)
 		set(IRRLICHT_DLL_DIR "${Irrlicht_ROOT}/bin")
 	endif()
 	if(IRRLICHT_DLL_DIR)
-		set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		if(HDF5_DLL_DIR)
+			set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};${HDF5_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		else()
+			set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		endif()
 	else()
-		set(TEST_ENVIRONMENT "PATH=${CHRONO_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		if(HDF5_DLL_DIR)
+			set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${HDF5_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		else()
+			set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
+		endif()
 	endif()
 endfunction()
 
@@ -316,9 +351,61 @@ set(HYDROCHRONO_SOURCES
 add_library(HydroChrono ${HYDROCHRONO_SOURCES})
 configure_hydro_target(HydroChrono)
 
-# Add HDF5 as private dependency (don't expose to users)
-target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIRS})
-target_link_libraries(HydroChrono PRIVATE ${HDF5_LIBRARIES})
+# Add HDF5 as private dependency via imported targets (headers/flags propagate)
+set(HC_HDF5_TARGETS)
+if(TARGET HDF5::HDF5_CXX)
+  list(APPEND HC_HDF5_TARGETS HDF5::HDF5_CXX)
+endif()
+if(TARGET HDF5::HDF5)
+  list(APPEND HC_HDF5_TARGETS HDF5::HDF5)
+endif()
+if(TARGET hdf5::hdf5_cpp)
+  list(APPEND HC_HDF5_TARGETS hdf5::hdf5_cpp)
+endif()
+if(TARGET hdf5::hdf5)
+  list(APPEND HC_HDF5_TARGETS hdf5::hdf5)
+endif()
+if(TARGET hdf5::hdf5_cpp-shared)
+  list(APPEND HC_HDF5_TARGETS hdf5::hdf5_cpp-shared)
+endif()
+if(TARGET hdf5::hdf5-shared)
+  list(APPEND HC_HDF5_TARGETS hdf5::hdf5-shared)
+endif()
+if(HC_HDF5_TARGETS)
+  # PUBLIC so static library link dependencies propagate to executables
+  target_link_libraries(HydroChrono PUBLIC ${HC_HDF5_TARGETS})
+else()
+  # Module-mode fallback variables (older FindHDF5)
+  if(DEFINED HDF5_CXX_LIBRARIES OR DEFINED HDF5_LIBRARIES)
+    target_link_libraries(HydroChrono PUBLIC ${HDF5_CXX_LIBRARIES} ${HDF5_LIBRARIES})
+  endif()
+endif()
+
+# Fallback: some HDF5 packages set HDF5_INCLUDE_DIRS instead of INTERFACE includes
+if(DEFINED HDF5_INCLUDE_DIRS)
+  target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIRS})
+elseif(DEFINED HDF5_INCLUDE_DIR)
+  target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIR})
+elseif(DEFINED HDF5_CXX_INCLUDE_DIR)
+  target_include_directories(HydroChrono PRIVATE ${HDF5_CXX_INCLUDE_DIR})
+else()
+  # Try to derive includes from imported target if available
+  if(TARGET HDF5::HDF5_CXX)
+    get_target_property(_H5_INCS HDF5::HDF5_CXX INTERFACE_INCLUDE_DIRECTORIES)
+    if(_H5_INCS)
+      target_include_directories(HydroChrono PRIVATE ${_H5_INCS})
+    endif()
+  elseif(TARGET hdf5::hdf5_cpp)
+    get_target_property(_H5_INCS hdf5::hdf5_cpp INTERFACE_INCLUDE_DIRECTORIES)
+    if(_H5_INCS)
+      target_include_directories(HydroChrono PRIVATE ${_H5_INCS})
+    endif()
+  endif()
+  # Last-resort fallback: include from HDF5_ROOT/include if it contains H5Cpp.h
+  if(NOT _H5_INCS AND DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/include/H5Cpp.h")
+    target_include_directories(HydroChrono PRIVATE "${HDF5_ROOT}/include")
+  endif()
+endif()
 target_compile_features(HydroChrono PUBLIC cxx_std_17)
 
 # target_include_directories(
@@ -343,7 +430,6 @@ target_include_directories(HydroChrono
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${HDF5_INCLUDE_DIRS}
 )
 
 # Library-specific compile definitions
@@ -374,6 +460,13 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
         PRIVATE HydroChrono HydroChronoGUI Chrono::Chrono_parsers
     )
 
+    # Safety net: if HDF5 was not propagated, link executable explicitly as well
+    if(HC_HDF5_TARGETS)
+        target_link_libraries(run_hydrochrono PRIVATE ${HC_HDF5_TARGETS})
+    elseif(DEFINED HDF5_CXX_LIBRARIES OR DEFINED HDF5_LIBRARIES)
+        target_link_libraries(run_hydrochrono PRIVATE ${HDF5_CXX_LIBRARIES} ${HDF5_LIBRARIES})
+    endif()
+
     target_include_directories(run_hydrochrono
         PRIVATE
             ${PROJECT_SOURCE_DIR}/include
@@ -395,8 +488,6 @@ target_link_libraries(HydroChrono
   PUBLIC
     ${CHRONO_TARGETS}             # Chrono::Chrono_core;Chrono::Chrono_irrlicht;...
     $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
-  PRIVATE
-    ${HDF5_LIBRARIES}
 )
 
 # If Eigen is module-mode (no imported target), include its dir
@@ -581,6 +672,28 @@ install(FILES
     "${CMAKE_BINARY_DIR}/bin/MinSizeRel/yaml-cpp.dll"
     "${CMAKE_BINARY_DIR}/bin/Debug/yaml-cpp.dll"
     DESTINATION bin COMPONENT runtime OPTIONAL)
+
+# HDF5 runtime DLLs (prefer imported targets, fallback to bin under HDF5_ROOT)
+set(HDF5_DLLS)
+foreach(tgt IN ITEMS HDF5::HDF5 HDF5::HDF5_CXX hdf5::hdf5 hdf5::hdf5_cpp hdf5::hdf5-shared hdf5::hdf5_cpp-shared)
+	if(TARGET ${tgt})
+		list(APPEND HDF5_DLLS "$<TARGET_FILE:${tgt}>")
+	endif()
+endforeach()
+if(HDF5_DLLS)
+	install(FILES ${HDF5_DLLS} DESTINATION bin COMPONENT runtime)
+else()
+	if(DEFINED HDF5_ROOT)
+		install(CODE "
+		  file(GLOB _H5_DLLS \"${HDF5_ROOT}/bin/*.dll\")
+		  foreach(_f IN LISTS _H5_DLLS)
+		    if(EXISTS \"${_f}\")
+		      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
+		    endif()
+		  endforeach()
+		")
+	endif()
+endif()
 
 # Fallback: copy all Chrono-built DLLs for the active config into bin
 install(CODE "

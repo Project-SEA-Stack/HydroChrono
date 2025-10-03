@@ -157,7 +157,7 @@ python .\run_tests.py --sphere-decay --exe ..\..\bin\run_hydrochrono.exe
 
 ## Developers
 
-- Full build and contribution docs: [Developer documentation](https://nrel.github.io/HydroChrono/developer_docs/build_instructions.html)
+- Full build and contribution docs: [Developer documentation](https://nrel.github.io/HydroChrono/developer_docs/index)
 
 ## Papers
 

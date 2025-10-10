@@ -149,6 +149,16 @@ class ForceFunc6d {
 
 class ChLoadAddedMass;
 
+// Lightweight hydrodynamics profiling stats
+struct HydroProfileStats {
+    double hydrostatics_seconds = 0.0;
+    double radiation_seconds    = 0.0;
+    double waves_seconds        = 0.0;
+    int hydrostatics_calls      = 0;
+    int radiation_calls         = 0;
+    int waves_calls             = 0;
+};
+
 // TODO: Rename TestHydro for clarity, perhaps to HydroForces?
 // TODO: Split TestHydro class from its helper classes for clearer code structure.
 class TestHydro {
@@ -233,6 +243,9 @@ class TestHydro {
      */
     double CoordinateFuncForBody(int b, int i);
 
+    // Hydrodynamics profiling accessors
+    HydroProfileStats GetProfileStats() const { return profile_stats_; }
+
   private:
     // Class properties related to the body and hydrodynamics
     std::vector<std::shared_ptr<ChBody>> bodies_;
@@ -281,6 +294,9 @@ class TestHydro {
      * @param index The DOF index, ranging from [0,1,...,5].
      */
     double SetVelHistory(double val, int step, int b_num, int index);
+
+    // Hydrodynamics profiling data (accumulated over run)
+    HydroProfileStats profile_stats_;
 };
 
 #endif

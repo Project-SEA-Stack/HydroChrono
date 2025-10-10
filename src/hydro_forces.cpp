@@ -24,6 +24,7 @@
 #include <random>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
 
 const int kDofPerBody  = 6;
 const int kDofLinOrRot = 3;
@@ -251,6 +252,7 @@ void TestHydro::AddWaves(std::shared_ptr<WaveBase> waves) {
 }
 
 std::vector<double> TestHydro::ComputeForceHydrostatics() {
+    auto __t0 = std::chrono::steady_clock::now();
     assert(num_bodies_ > 0);
 
     const double rho = file_info_.GetRhoVal();
@@ -305,10 +307,13 @@ std::vector<double> TestHydro::ComputeForceHydrostatics() {
         body_force_hydrostatic[5] += buoyancy_torque.z();
     }
 
+    profile_stats_.hydrostatics_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.hydrostatics_calls++;
     return force_hydrostatic_;
 }
 
 std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
+    auto __t0 = std::chrono::steady_clock::now();
     const int rirf_steps = file_info_.GetRIRFDims(2);
     const int total_dofs = kDofPerBody * num_bodies_;
 
@@ -348,14 +353,16 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
             for (int b = 0; b < num_bodies_; ++b) {
                 auto& velocity_history_body = velocity_history_[b];
                 if (!velocity_history_body.empty()) {
-                    velocity_history_body.pop_back();
-                }
+                velocity_history_body.pop_back();
             }
+        }
         }
     }
 
     // Nothing to convolve with if we don't yet have at least 2 time points
     if (time_history_.size() <= 1) {
+        profile_stats_.radiation_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+        profile_stats_.radiation_calls++;
         return force_radiation_damping_;
     }
 
@@ -414,7 +421,7 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
                 interpolated_velocity_dof[3] = weight_older * older_velocity[3] + weight_newer * newer_velocity[3];
                 interpolated_velocity_dof[4] = weight_older * older_velocity[4] + weight_newer * newer_velocity[4];
                 interpolated_velocity_dof[5] = weight_older * older_velocity[5] + weight_newer * newer_velocity[5];
-            } else {
+                } else {
                 throw std::runtime_error(
                     "Radiation convolution: interpolation error; rirf_query_time not bracketed by adjacent history.");
             }
@@ -435,6 +442,8 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
         }
     }
 
+    profile_stats_.radiation_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.radiation_calls++;
     return force_radiation_damping_;
 }
 
@@ -452,6 +461,7 @@ double TestHydro::GetRIRFval(int row, int col, int st) {
 }
 
 Eigen::VectorXd TestHydro::ComputeForceWaves() {
+    auto __t0 = std::chrono::steady_clock::now();
     // Ensure bodies_ is not empty
     if (bodies_.empty()) {
         throw std::runtime_error("bodies_ array is empty in ComputeForceWaves");
@@ -459,12 +469,8 @@ Eigen::VectorXd TestHydro::ComputeForceWaves() {
 
     force_waves_ = user_waves_->GetForceAtTime(bodies_[0]->GetChTime());
 
-    // TODO: Add size check for force_waves_ if needed
-    // Example:
-    // if (force_waves_.size() != expected_size) {
-    //     throw std::runtime_error("Mismatched size in ComputeForceWaves");
-    // }
-
+    profile_stats_.waves_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.waves_calls++;
     return force_waves_;
 }
 

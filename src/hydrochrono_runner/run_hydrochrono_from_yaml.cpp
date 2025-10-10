@@ -292,6 +292,7 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         bool enable_logging = false; // default: only log when --log is supplied
         bool debug_mode = false;
         bool trace_mode = false;
+        bool profile_mode = false;
 
         // Parse command line arguments
         for (int i = 1; i < argc; ++i) {
@@ -311,6 +312,8 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
             } else if (arg == "--trace") {
                 trace_mode = true;
                 debug_mode = true; // trace implies debug
+            } else if (arg == "--profile") {
+                profile_mode = true;
             } else if (arg == "--nobanner") {
                 // Optional: could disable banner; currently handled by enable_cli_output
             } else if (arg == "--quiet") {
@@ -655,7 +658,14 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         // ---------------------------------------------------------------------
         // 7. Run simulation
         // ---------------------------------------------------------------------
-        auto start_time = std::chrono::steady_clock::now();
+        auto wall_start = std::chrono::steady_clock::now();
+        // Profiling accumulators
+        std::chrono::steady_clock::time_point t;
+        double prof_setup_seconds = 0.0;
+        double prof_loop_seconds = 0.0;
+        double prof_export_seconds = 0.0;
+        double prof_other_seconds = 0.0;
+        auto prof_section_start = std::chrono::steady_clock::now(); // setup section start
         
         
         // Log simulation loop entry
@@ -680,10 +690,14 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
             while (system->GetChTime() < end_time_bound) {
                 double current_time = system->GetChTime();
                 try {
+                    if (profile_mode) { t = std::chrono::steady_clock::now(); }
                     system->DoStepDynamics(loop_dt);
+                    if (profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
                     if (exporter) {
+                        if (profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
+                        if (profile_mode) { prof_export_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     }
                     previous_time = current_time;
                 } catch (const std::exception& e) {
@@ -734,10 +748,14 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                 
                 try {
                     // 🧯 Scoped try/catch around DoStepDynamics
+                    if (profile_mode) { t = std::chrono::steady_clock::now(); }
                     system->DoStepDynamics(loop_dt);
+                    if (profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
                     if (exporter) {
+                        if (profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
+                        if (profile_mode) { prof_export_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     }
                     
                     // 🧯 After first step - check if simulation time advanced
@@ -875,20 +893,53 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     break;  // Exit simulation loop on exception
                 }
             }
-        }
+            }
         }
         
-        auto end_time = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto wall_end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
         
         // Final results display (CLI visible)
         hydroc::cli::ShowSimulationResults(system->GetChTime(), static_cast<int>(system->GetChTime() / loop_dt), duration.count() / 1000.0);
 
         // Finalize HDF5 output with runtime metadata
         if (exporter) {
-            double wall_s = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+            double wall_s = std::chrono::duration_cast<std::chrono::duration<double>>(wall_end - wall_start).count();
             exporter->SetRunMetadata(std::string(""), std::string(""), wall_s, step_count, loop_dt, system->GetChTime());
             exporter->Finalize();
+        }
+
+        // Optional profiling summary
+        if (profile_mode) {
+            double wall_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(wall_end - wall_start).count();
+            prof_other_seconds = std::max(0.0, wall_seconds - (prof_setup_seconds + prof_loop_seconds + prof_export_seconds));
+            
+            std::vector<std::string> prof_lines;
+            auto pct = [&](double s){ return hydroc::FormatNumber(100.0 * (s / std::max(1e-12, wall_seconds)), 1) + "%"; };
+            
+            // Top-level sections
+            prof_lines.push_back(hydroc::cli::CreateAlignedLine("📦", "Setup", hydroc::FormatNumber(prof_setup_seconds, 3) + " s (" + pct(prof_setup_seconds) + ")"));
+            prof_lines.push_back(hydroc::cli::CreateAlignedLine("⚙️", "Dynamics Loop", hydroc::FormatNumber(prof_loop_seconds, 3) + " s (" + pct(prof_loop_seconds) + ")"));
+            
+            // Nested breakdown under Dynamics Loop
+            if (test_hydro) {
+                auto hp = test_hydro->GetProfileStats();
+                double hydro_total = hp.hydrostatics_seconds + hp.radiation_seconds + hp.waves_seconds;
+                double chrono_solver = std::max(0.0, prof_loop_seconds - hydro_total);
+                
+                auto loop_pct = [&](double s){ return hydroc::FormatNumber(100.0 * (s / std::max(1e-12, prof_loop_seconds)), 1) + "%"; };
+                prof_lines.push_back(hydroc::cli::CreateAlignedLine("   🔧", "Chrono Solver", hydroc::FormatNumber(chrono_solver, 4) + " s  (" + loop_pct(chrono_solver) + ")"));
+                prof_lines.push_back(hydroc::cli::CreateAlignedLine("   ⚓", "Hydrostatics", hydroc::FormatNumber(hp.hydrostatics_seconds, 4) + " s  (" + loop_pct(hp.hydrostatics_seconds) + ")  [" + std::to_string(hp.hydrostatics_calls) + " calls]"));
+                prof_lines.push_back(hydroc::cli::CreateAlignedLine("   💧", "Radiation Damping", hydroc::FormatNumber(hp.radiation_seconds, 4) + " s  (" + loop_pct(hp.radiation_seconds) + ")  [" + std::to_string(hp.radiation_calls) + " calls]"));
+                prof_lines.push_back(hydroc::cli::CreateAlignedLine("   🌊", "Wave Forces", hydroc::FormatNumber(hp.waves_seconds, 4) + " s  (" + loop_pct(hp.waves_seconds) + ")  [" + std::to_string(hp.waves_calls) + " calls]"));
+            }
+            
+            if (exporter) {
+                prof_lines.push_back(hydroc::cli::CreateAlignedLine("💾", "Export", hydroc::FormatNumber(prof_export_seconds, 3) + " s (" + pct(prof_export_seconds) + ")"));
+            }
+            prof_lines.push_back(hydroc::cli::CreateAlignedLine("━━━", "━━━━━━━━━━━━━━━━━━━━━━", "━━━━━━━━━━━━━━━━━━━━"));
+            prof_lines.push_back(hydroc::cli::CreateAlignedLine("📈", "Total Runtime", hydroc::FormatNumber(wall_seconds, 3) + " s (100%)"));
+            hydroc::cli::ShowSectionBox("🔬 Performance Profiling", prof_lines);
         }
         
         // Display warnings section if any warnings were collected

@@ -254,142 +254,187 @@ std::vector<double> TestHydro::ComputeForceHydrostatics() {
     assert(num_bodies_ > 0);
 
     const double rho = file_info_.GetRhoVal();
-    const auto g_acc = bodies_[0]->GetSystem()->GetGravitationalAcceleration();  // assuming all bodies in same system
-    const double gg  = g_acc.Length();
+    const auto gravitational_acceleration = bodies_[0]->GetSystem()->GetGravitationalAcceleration();  // same system for all bodies
+    const double rho_times_g = rho * gravitational_acceleration.Length();
 
-    for (int b = 0; b < num_bodies_; b++) {
-        std::shared_ptr<chrono::ChBody> body = bodies_[b];
+    for (int b = 0; b < num_bodies_; ++b) {
+        const auto& body = bodies_[b];
 
-        int b_offset                   = kDofPerBody * b;
-        double* body_force_hydrostatic = &force_hydrostatic_[b_offset];
-        double* body_equilibrium       = &equilibrium_[b_offset];
+        const int body_offset = kDofPerBody * b;
+        double* const body_force_hydrostatic = &force_hydrostatic_[body_offset];
+        const double* const body_equilibrium = &equilibrium_[body_offset];
 
-        // hydrostatic stiffness due to offset from equilibrium
-        const auto body_position = body->GetPos();
-        const auto body_rotation = body->GetRot().GetCardanAnglesXYZ();
+        // Current pose
+        const chrono::ChVector3d position_world = body->GetPos();
+        const chrono::ChVector3d rotation_rpy   = body->GetRot().GetCardanAnglesXYZ();
 
-        chrono::ChVectorN<double, kDofPerBody> body_displacement;
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_displacement[ii]                = body_position[ii] - body_equilibrium[ii];
-            body_displacement[ii + kDofLinOrRot] = body_rotation[ii] - body_equilibrium[ii + kDofLinOrRot];
+        // 6-DOF displacement from equilibrium (translation xyz, rotation rpy)
+        Eigen::Matrix<double, kDofPerBody, 1> displacement_from_equilibrium;
+        displacement_from_equilibrium[0] = position_world.x() - body_equilibrium[0];
+        displacement_from_equilibrium[1] = position_world.y() - body_equilibrium[1];
+        displacement_from_equilibrium[2] = position_world.z() - body_equilibrium[2];
+        displacement_from_equilibrium[3] = rotation_rpy.x()   - body_equilibrium[3];
+        displacement_from_equilibrium[4] = rotation_rpy.y()   - body_equilibrium[4];
+        displacement_from_equilibrium[5] = rotation_rpy.z()   - body_equilibrium[5];
+
+        // Linear hydrostatic restoring force/torque
+        const Eigen::MatrixXd restoring_stiffness_matrix = file_info_.GetLinMatrix(b);
+        const Eigen::Matrix<double, kDofPerBody, 1> restoring_force_torque =
+            -rho_times_g * (restoring_stiffness_matrix * displacement_from_equilibrium);
+        for (int i = 0; i < kDofPerBody; ++i) {
+            body_force_hydrostatic[i] += restoring_force_torque[i];
         }
 
-        const auto force_offset = -gg * rho * file_info_.GetLinMatrix(b) * body_displacement;
-        for (int dof = 0; dof < kDofPerBody; dof++) {
-            body_force_hydrostatic[dof] += force_offset[dof];
-        }
+        // Buoyancy force at equilibrium: F = rho * (-g) * displaced_volume
+        const double displaced_volume = file_info_.GetDispVolVal(b);
+        const chrono::ChVector3d buoyancy_force = rho * (-gravitational_acceleration) * displaced_volume;
+        body_force_hydrostatic[0] += buoyancy_force.x();
+        body_force_hydrostatic[1] += buoyancy_force.y();
+        body_force_hydrostatic[2] += buoyancy_force.z();
 
-        // buoyancy at equilibrium
-        const auto buoyancy = rho * (-g_acc) * file_info_.GetDispVolVal(b);
-
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_force_hydrostatic[ii] += buoyancy[ii];
-        }
-
-        int r_offset = kDofLinOrRot * b;
-        const auto cg2cb =
-            chrono::ChVector3d(cb_minus_cg_[r_offset], cb_minus_cg_[r_offset + 1], cb_minus_cg_[r_offset + 2]);
-        const auto buoyancy2 = cg2cb % buoyancy;
-
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_force_hydrostatic[ii + kDofLinOrRot] += buoyancy2[ii];
-        }
+        // Buoyancy-induced moment about CG: (r_CB - r_CG) x buoyancy
+        const int rotation_offset = kDofLinOrRot * b;
+        const chrono::ChVector3d cg_to_cb(
+            cb_minus_cg_[rotation_offset + 0],
+            cb_minus_cg_[rotation_offset + 1],
+            cb_minus_cg_[rotation_offset + 2]
+        );
+        const chrono::ChVector3d buoyancy_torque = cg_to_cb % buoyancy_force;
+        body_force_hydrostatic[3] += buoyancy_torque.x();
+        body_force_hydrostatic[4] += buoyancy_torque.y();
+        body_force_hydrostatic[5] += buoyancy_torque.z();
     }
 
     return force_hydrostatic_;
 }
 
 std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
-    const int size    = file_info_.GetRIRFDims(2);
-    const int numRows = kDofPerBody * num_bodies_;
-    const int numCols = kDofPerBody * num_bodies_;
+    const int rirf_steps = file_info_.GetRIRFDims(2);
+    const int total_dofs = kDofPerBody * num_bodies_;
 
-    assert(numRows * size > 0 && numCols > 0);
+    assert(total_dofs > 0 && rirf_steps > 0);
 
-    // time history
-    auto t_sim = bodies_[0]->GetChTime();
-    auto t_min = t_sim - rirf_time_vector.tail<1>()[0];
-    if (time_history_.size() > 0 && t_sim == time_history_.front()) {
+    // Current time and minimum history time window required
+    const double simulation_time = bodies_[0]->GetChTime();
+    const int rirf_last_index = static_cast<int>(rirf_time_vector.size()) - 1;
+    const double history_min_time = simulation_time - (rirf_last_index >= 0 ? rirf_time_vector[rirf_last_index] : 0.0);
+
+    // Prevent duplicate computation within same step
+    if (!time_history_.empty() && simulation_time == time_history_.front()) {
         throw std::runtime_error("Tried to compute the radiation damping convolution twice within the same time step!");
     }
-    time_history_.insert(time_history_.begin(), t_sim);
 
-    // velocity history
-    for (int b = 0; b < num_bodies_; b++) {
-        auto& body                  = bodies_[b];
+    // Record current time at the front (most recent first)
+    time_history_.insert(time_history_.begin(), simulation_time);
+
+    // Record current velocities per body at the front (matching time_history_ ordering)
+    for (int b = 0; b < num_bodies_; ++b) {
+        auto& body = bodies_[b];
         auto& velocity_history_body = velocity_history_[b];
 
-        auto vel                    = body->GetPosDt();
-        auto wvel                   = body->GetAngVelParent();
-        std::vector<double> vel_vec = {vel[0], vel[1], vel[2], wvel[0], wvel[1], wvel[2]};
-        velocity_history_body.insert(velocity_history_body.begin(), vel_vec);
+        const auto linear_velocity_world  = body->GetPosDt();
+        const auto angular_velocity_world = body->GetAngVelParent();
+        std::vector<double> velocity_dof_vector = {
+            linear_velocity_world[0], linear_velocity_world[1], linear_velocity_world[2],
+            angular_velocity_world[0], angular_velocity_world[1], angular_velocity_world[2]
+        };
+        velocity_history_body.insert(velocity_history_body.begin(), std::move(velocity_dof_vector));
     }
 
-    // remove unnecessary history
+    // Prune history older than the max RIRF time span
     if (time_history_.size() > 1) {
-        while (time_history_[time_history_.size() - 2] < t_min) {
+        while (time_history_.size() > 1 && time_history_[time_history_.size() - 2] < history_min_time) {
             time_history_.pop_back();
-            for (int b = 0; b < num_bodies_; b++) {
+            for (int b = 0; b < num_bodies_; ++b) {
                 auto& velocity_history_body = velocity_history_[b];
-                velocity_history_body.pop_back();
-            }
-        }
-    }
-
-    if (time_history_.size() > 1) {
-        int idx_history = 0;
-
-        // iterate over RIRF steps
-        for (int step = 0; step < size; step++) {
-            auto t_rirf = t_sim - rirf_time_vector[step];
-            while (time_history_[idx_history + 1] > t_rirf && idx_history < time_history_.size() - 1) {
-                idx_history += 1;
-            }
-            if (idx_history >= time_history_.size() - 1) {
-                break;
-            }
-
-            // iterate over bodies
-            for (int idx_body = 0; idx_body < num_bodies_; idx_body++) {
-                auto& velocity_history_body = velocity_history_[idx_body];
-                std::vector<double> vel(kDofPerBody);
-
-                // interpolate velocity at t_rirf from recorded velocity history
-                // time values
-                auto t1 = time_history_[idx_history + 1];
-                auto t2 = time_history_[idx_history];
-                if (t_rirf == t1) {
-                    vel = velocity_history_body[idx_history + 1];
-                } else if (t_rirf == t2) {
-                    vel = velocity_history_body[idx_history];
-                } else if (t_rirf > t1 && t_rirf < t2) {
-                    // weights
-                    auto w1 = (t2 - t_rirf) / (t2 - t1);
-                    auto w2 = 1.0 - w1;
-                    // velocity values
-                    auto vel1 = velocity_history_body[idx_history + 1];
-                    auto vel2 = velocity_history_body[idx_history];
-                    for (int dof = 0; dof < kDofPerBody; dof++) {
-                        vel[dof] = w1 * vel1[dof] + w2 * vel2[dof];
-                    }
-                } else {
-                    throw std::runtime_error("Radiation convolution: wrong interpolation: " + std::to_string(t_rirf) +
-                                             " not between " + std::to_string(t1) + " and " + std::to_string(t2) + ".");
-                }
-
-                for (int dof = 0; dof < kDofPerBody; dof++) {
-                    // get column index
-                    int col = dof + idx_body * kDofPerBody;
-
-                    // iterate over rows
-                    for (int row = 0; row < numRows; row++) {
-                        force_radiation_damping_[row] +=
-                            GetRIRFval(row, col, step) * vel[dof] * rirf_width_vector[step];
-                    }
+                if (!velocity_history_body.empty()) {
+                    velocity_history_body.pop_back();
                 }
             }
         }
     }
+
+    // Nothing to convolve with if we don't yet have at least 2 time points
+    if (time_history_.size() <= 1) {
+        return force_radiation_damping_;
+    }
+
+    // Walk through RIRF steps and accumulate convolution
+    size_t history_index = 0;  // index into descending time_history_ (front is most recent)
+    for (int step = 0; step < rirf_steps; ++step) {
+        const double rirf_query_time = simulation_time - rirf_time_vector[step];
+
+        // Advance history_index until [history_index, history_index+1] brackets rirf_query_time, or we run out
+        while ((history_index + 1) < time_history_.size() && time_history_[history_index + 1] > rirf_query_time) {
+            ++history_index;
+        }
+        if ((history_index + 1) >= time_history_.size()) {
+            break;  // not enough older history to interpolate
+        }
+
+        const double newer_time = time_history_[history_index];
+        const double older_time = time_history_[history_index + 1];
+
+        // For each body, interpolate 6-DOF velocity at rirf_query_time and apply convolution
+        for (int body_index = 0; body_index < num_bodies_; ++body_index) {
+            auto& velocity_history_body = velocity_history_[body_index];
+
+            // Ensure history is consistent across bodies
+            if (velocity_history_body.size() <= history_index) {
+                continue;  // skip if inconsistent; should not happen in normal flow
+            }
+
+            // Interpolate velocities
+            double interpolated_velocity_dof[kDofPerBody];
+            if (rirf_query_time == older_time) {
+                const auto& older_velocity = velocity_history_body[history_index + 1];
+                interpolated_velocity_dof[0] = older_velocity[0];
+                interpolated_velocity_dof[1] = older_velocity[1];
+                interpolated_velocity_dof[2] = older_velocity[2];
+                interpolated_velocity_dof[3] = older_velocity[3];
+                interpolated_velocity_dof[4] = older_velocity[4];
+                interpolated_velocity_dof[5] = older_velocity[5];
+            } else if (rirf_query_time == newer_time) {
+                const auto& newer_velocity = velocity_history_body[history_index];
+                interpolated_velocity_dof[0] = newer_velocity[0];
+                interpolated_velocity_dof[1] = newer_velocity[1];
+                interpolated_velocity_dof[2] = newer_velocity[2];
+                interpolated_velocity_dof[3] = newer_velocity[3];
+                interpolated_velocity_dof[4] = newer_velocity[4];
+                interpolated_velocity_dof[5] = newer_velocity[5];
+            } else if (rirf_query_time > older_time && rirf_query_time < newer_time) {
+                const double time_delta = (newer_time - older_time);
+                const double weight_older = (time_delta != 0.0) ? ((newer_time - rirf_query_time) / time_delta) : 0.0;
+                const double weight_newer = 1.0 - weight_older;
+                const auto& older_velocity = velocity_history_body[history_index + 1];
+                const auto& newer_velocity = velocity_history_body[history_index];
+                interpolated_velocity_dof[0] = weight_older * older_velocity[0] + weight_newer * newer_velocity[0];
+                interpolated_velocity_dof[1] = weight_older * older_velocity[1] + weight_newer * newer_velocity[1];
+                interpolated_velocity_dof[2] = weight_older * older_velocity[2] + weight_newer * newer_velocity[2];
+                interpolated_velocity_dof[3] = weight_older * older_velocity[3] + weight_newer * newer_velocity[3];
+                interpolated_velocity_dof[4] = weight_older * older_velocity[4] + weight_newer * newer_velocity[4];
+                interpolated_velocity_dof[5] = weight_older * older_velocity[5] + weight_newer * newer_velocity[5];
+            } else {
+                throw std::runtime_error(
+                    "Radiation convolution: interpolation error; rirf_query_time not bracketed by adjacent history.");
+            }
+
+            // Apply convolution: for each DOF column, add RIRF[:, col, step] * vel[dof] * width
+            const double step_width = rirf_width_vector[step];
+            const int body_col_offset = body_index * kDofPerBody;
+            for (int dof = 0; dof < kDofPerBody; ++dof) {
+                const int col = body_col_offset + dof;
+                const double contribution_scale = interpolated_velocity_dof[dof] * step_width;
+                if (contribution_scale == 0.0) {
+                    continue;
+                }
+                for (int row = 0; row < total_dofs; ++row) {
+                    force_radiation_damping_[row] += GetRIRFval(row, col, step) * contribution_scale;
+                }
+            }
+        }
+    }
+
     return force_radiation_damping_;
 }
 

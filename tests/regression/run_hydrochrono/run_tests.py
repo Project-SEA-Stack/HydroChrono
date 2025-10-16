@@ -15,6 +15,41 @@ ROOT = _here.parents[3] if _here.parents[1].name == "regression" else _here.pare
 THIS = _here.parent
 
 
+def _resolve_compare_template_dir() -> Path | None:
+    """Locate a directory containing compare_template.py across source/install layouts.
+
+    Search order (first match wins):
+    - tests/regression (source tree layout)
+    - tests/regression/utilities (alternative location)
+    - siblings relative to installed layout: tests/regression, tests/regression/utilities
+    - walk up a few parents and probe known subpaths
+    """
+    candidates: list[Path] = []
+    # Local candidates near this script
+    candidates.append(THIS.parent / "regression")               # tests/regression (source layout)
+    candidates.append(THIS.parent / "regression" / "utilities")
+    candidates.append(THIS)                                      # tests/run_hydrochrono sibling 'compare_template.py' (rare)
+    candidates.append(THIS.parent)                               # tests/
+    # Root-based candidates
+    candidates.append(ROOT / "tests" / "regression")
+    candidates.append(ROOT / "tests" / "regression" / "utilities")
+
+    # Walk up a few levels and try common subpaths
+    cur = _here
+    for _ in range(6):
+        cur = cur.parent
+        candidates.append(cur / "tests" / "regression")
+        candidates.append(cur / "tests" / "regression" / "utilities")
+
+    for c in candidates:
+        try:
+            if (c / "compare_template.py").exists():
+                return c
+        except Exception:
+            pass
+    return None
+
+
 def default_exe() -> str:
 	"""Best-effort discovery of run_hydrochrono.exe in build and install layouts."""
 	# Allow override via environment
@@ -92,9 +127,9 @@ def run_case(exe: str, model: str, test_type: str, tol: float, update_baseline: 
 				assert spec and spec.loader
 				adapter = importlib.util.module_from_spec(spec)
 				spec.loader.exec_module(adapter)  # type: ignore
-				# import plotting template from tests/regression
-				regression_dir = THIS.parent
-				if str(regression_dir) not in sys.path:
+				# import plotting template from tests/regression (robust resolution)
+				regression_dir = _resolve_compare_template_dir()
+				if regression_dir is not None and str(regression_dir) not in sys.path:
 					sys.path.insert(0, str(regression_dir))
 				from compare_template import create_comparison_plot  # type: ignore
 				# helper
@@ -135,7 +170,7 @@ def run_case(exe: str, model: str, test_type: str, tol: float, update_baseline: 
 						)
 						if result != "PASS":
 							status = 1
-					return status
+				return status
 				if single is not None:
 					t_sim, y_sim, y_label = single(outputs_h5)
 					if ref:

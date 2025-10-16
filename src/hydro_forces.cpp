@@ -26,6 +26,10 @@
 #include <vector>
 #include <chrono>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 const int kDofPerBody  = 6;
 const int kDofLinOrRot = 3;
 
@@ -312,6 +316,66 @@ std::vector<double> TestHydro::ComputeForceHydrostatics() {
     return force_hydrostatic_;
 }
 
+// Internal helpers (file-local)
+namespace {
+// Remove history entries older than history_min_time.
+inline void PruneHistory(std::vector<double>& time_history,
+                         std::vector<std::vector<std::vector<double>>>& velocity_history,
+                         int num_bodies,
+                         double history_min_time) {
+    while (time_history.size() > 1 && time_history[time_history.size() - 2] < history_min_time) {
+        time_history.pop_back();
+        for (int b = 0; b < num_bodies; ++b) {
+            auto& velocity_history_body = velocity_history[b];
+            if (!velocity_history_body.empty()) {
+                velocity_history_body.pop_back();
+            }
+        }
+    }
+}
+
+// Interpolate 6-DOF velocities at a query time from two bracketing samples.
+inline void InterpolateVelocity6D(const std::vector<std::vector<double>>& velocity_history_body,
+                                  size_t newer_index,
+                                  double query_time,
+                                  double older_time,
+                                  double newer_time,
+                                  double out_velocity[kDofPerBody]) {
+    if (query_time == older_time) {
+        const auto& older_velocity = velocity_history_body[newer_index + 1];
+        for (int dof = 0; dof < kDofPerBody; ++dof) out_velocity[dof] = older_velocity[dof];
+        return;
+    }
+    if (query_time == newer_time) {
+        const auto& newer_velocity = velocity_history_body[newer_index];
+        for (int dof = 0; dof < kDofPerBody; ++dof) out_velocity[dof] = newer_velocity[dof];
+        return;
+    }
+    if (query_time > older_time && query_time < newer_time) {
+        const double time_delta   = (newer_time - older_time);
+        const double weight_older = (time_delta != 0.0) ? ((newer_time - query_time) / time_delta) : 0.0;
+        const double weight_newer = 1.0 - weight_older;
+        const auto& older_velocity = velocity_history_body[newer_index + 1];
+        const auto& newer_velocity = velocity_history_body[newer_index];
+        for (int dof = 0; dof < kDofPerBody; ++dof) {
+            out_velocity[dof] = weight_older * older_velocity[dof] + weight_newer * newer_velocity[dof];
+        }
+        return;
+    }
+    throw std::runtime_error("Radiation convolution: interpolation error; query_time not bracketed by history.");
+}
+
+// Advance index so that time_history[index] >= query_time >= time_history[index+1] (newest first ordering).
+inline bool AdvanceToBracket(const std::vector<double>& time_history,
+                             size_t& index,
+                             double query_time) {
+    while ((index + 1) < time_history.size() && time_history[index + 1] > query_time) {
+        ++index;
+    }
+    return ((index + 1) < time_history.size());
+}
+} // namespace
+
 std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
     auto __t0 = std::chrono::steady_clock::now();
     const int rirf_steps = file_info_.GetRIRFDims(2);
@@ -347,17 +411,7 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
     }
 
     // Prune history older than the max RIRF time span
-    if (time_history_.size() > 1) {
-        while (time_history_.size() > 1 && time_history_[time_history_.size() - 2] < history_min_time) {
-            time_history_.pop_back();
-            for (int b = 0; b < num_bodies_; ++b) {
-                auto& velocity_history_body = velocity_history_[b];
-                if (!velocity_history_body.empty()) {
-                velocity_history_body.pop_back();
-            }
-        }
-        }
-    }
+    PruneHistory(time_history_, velocity_history_, num_bodies_, history_min_time);
 
     // Nothing to convolve with if we don't yet have at least 2 time points
     if (time_history_.size() <= 1) {
@@ -368,65 +422,90 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
 
     // Walk through RIRF steps and accumulate convolution
     size_t history_index = 0;  // index into descending time_history_ (front is most recent)
+
+#ifdef _OPENMP
+    const int num_threads = omp_get_max_threads();
+    std::vector<std::vector<double>> thread_locals(num_threads, std::vector<double>(total_dofs, 0.0));
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& local_out = thread_locals[tid];
+
+        size_t history_index_local = history_index;
+        #pragma omp for schedule(static)
+        for (int step = 0; step < rirf_steps; ++step) {
+            const double rirf_query_time = simulation_time - rirf_time_vector[step];
+
+            size_t time_index = history_index_local;
+            if (!AdvanceToBracket(time_history_, time_index, rirf_query_time)) {
+                continue;  // not enough older history to interpolate
+            }
+            history_index_local = time_index;
+
+            const double newer_time = time_history_[history_index_local];
+            const double older_time = time_history_[history_index_local + 1];
+
+            for (int body_index = 0; body_index < num_bodies_; ++body_index) {
+                const auto& velocity_history_body = velocity_history_[body_index];
+                if (velocity_history_body.size() <= history_index_local) {
+                    continue;  // inconsistent; should not happen in normal flow
+                }
+
+                double interpolated_velocity_dof[kDofPerBody];
+                InterpolateVelocity6D(velocity_history_body, history_index_local, rirf_query_time,
+                                      older_time, newer_time, interpolated_velocity_dof);
+
+                const double step_width = rirf_width_vector[step];
+                if (step_width == 0.0) {
+                    continue;
+                }
+                const int body_col_offset = body_index * kDofPerBody;
+                for (int dof = 0; dof < kDofPerBody; ++dof) {
+                    const int col = body_col_offset + dof;
+                    const double contribution_scale = interpolated_velocity_dof[dof] * step_width;
+                    if (contribution_scale == 0.0) {
+                        continue;
+                    }
+                    for (int row = 0; row < total_dofs; ++row) {
+                        local_out[row] += GetRIRFval(row, col, step) * contribution_scale;
+                    }
+                }
+            }
+        }
+    }
+
+    // Deterministic combine of thread-local accumulators
+    for (int t = 0; t < num_threads; ++t) {
+        const auto& local = thread_locals[t];
+        for (int row = 0; row < total_dofs; ++row) {
+            force_radiation_damping_[row] += local[row];
+        }
+    }
+#else
+    double* force_radiation_out = force_radiation_damping_.data();
     for (int step = 0; step < rirf_steps; ++step) {
         const double rirf_query_time = simulation_time - rirf_time_vector[step];
 
-        // Advance history_index until [history_index, history_index+1] brackets rirf_query_time, or we run out
-        while ((history_index + 1) < time_history_.size() && time_history_[history_index + 1] > rirf_query_time) {
-            ++history_index;
-        }
-        if ((history_index + 1) >= time_history_.size()) {
+        size_t time_index = history_index;
+        if (!AdvanceToBracket(time_history_, time_index, rirf_query_time)) {
             break;  // not enough older history to interpolate
         }
+        history_index = time_index;
 
         const double newer_time = time_history_[history_index];
         const double older_time = time_history_[history_index + 1];
 
-        // For each body, interpolate 6-DOF velocity at rirf_query_time and apply convolution
         for (int body_index = 0; body_index < num_bodies_; ++body_index) {
-            auto& velocity_history_body = velocity_history_[body_index];
-
-            // Ensure history is consistent across bodies
+            const auto& velocity_history_body = velocity_history_[body_index];
             if (velocity_history_body.size() <= history_index) {
                 continue;  // skip if inconsistent; should not happen in normal flow
             }
 
-            // Interpolate velocities
             double interpolated_velocity_dof[kDofPerBody];
-            if (rirf_query_time == older_time) {
-                const auto& older_velocity = velocity_history_body[history_index + 1];
-                interpolated_velocity_dof[0] = older_velocity[0];
-                interpolated_velocity_dof[1] = older_velocity[1];
-                interpolated_velocity_dof[2] = older_velocity[2];
-                interpolated_velocity_dof[3] = older_velocity[3];
-                interpolated_velocity_dof[4] = older_velocity[4];
-                interpolated_velocity_dof[5] = older_velocity[5];
-            } else if (rirf_query_time == newer_time) {
-                const auto& newer_velocity = velocity_history_body[history_index];
-                interpolated_velocity_dof[0] = newer_velocity[0];
-                interpolated_velocity_dof[1] = newer_velocity[1];
-                interpolated_velocity_dof[2] = newer_velocity[2];
-                interpolated_velocity_dof[3] = newer_velocity[3];
-                interpolated_velocity_dof[4] = newer_velocity[4];
-                interpolated_velocity_dof[5] = newer_velocity[5];
-            } else if (rirf_query_time > older_time && rirf_query_time < newer_time) {
-                const double time_delta = (newer_time - older_time);
-                const double weight_older = (time_delta != 0.0) ? ((newer_time - rirf_query_time) / time_delta) : 0.0;
-                const double weight_newer = 1.0 - weight_older;
-                const auto& older_velocity = velocity_history_body[history_index + 1];
-                const auto& newer_velocity = velocity_history_body[history_index];
-                interpolated_velocity_dof[0] = weight_older * older_velocity[0] + weight_newer * newer_velocity[0];
-                interpolated_velocity_dof[1] = weight_older * older_velocity[1] + weight_newer * newer_velocity[1];
-                interpolated_velocity_dof[2] = weight_older * older_velocity[2] + weight_newer * newer_velocity[2];
-                interpolated_velocity_dof[3] = weight_older * older_velocity[3] + weight_newer * newer_velocity[3];
-                interpolated_velocity_dof[4] = weight_older * older_velocity[4] + weight_newer * newer_velocity[4];
-                interpolated_velocity_dof[5] = weight_older * older_velocity[5] + weight_newer * newer_velocity[5];
-                } else {
-                throw std::runtime_error(
-                    "Radiation convolution: interpolation error; rirf_query_time not bracketed by adjacent history.");
-            }
+            InterpolateVelocity6D(velocity_history_body, history_index, rirf_query_time,
+                                  older_time, newer_time, interpolated_velocity_dof);
 
-            // Apply convolution: for each DOF column, add RIRF[:, col, step] * vel[dof] * width
             const double step_width = rirf_width_vector[step];
             const int body_col_offset = body_index * kDofPerBody;
             for (int dof = 0; dof < kDofPerBody; ++dof) {
@@ -436,11 +515,12 @@ std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
                     continue;
                 }
                 for (int row = 0; row < total_dofs; ++row) {
-                    force_radiation_damping_[row] += GetRIRFval(row, col, step) * contribution_scale;
+                    force_radiation_out[row] += GetRIRFval(row, col, step) * contribution_scale;
                 }
             }
         }
     }
+#endif
 
     profile_stats_.radiation_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
     profile_stats_.radiation_calls++;

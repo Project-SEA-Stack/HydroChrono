@@ -175,19 +175,8 @@ endif()
 
 # ── HDF5 Integration ──
 # Prefer config package at provided root; avoid environment/registry
-if(DEFINED HDF5_DIR AND NOT DEFINED HDF5_ROOT)
-  set(HDF5_ROOT "${HDF5_DIR}")
-endif()
-set(HDF5_ROOT "${HDF5_ROOT}" CACHE PATH "HDF5 root directory")
-if(DEFINED HDF5_ROOT)
-  # Prepend so our supplied root wins
-  if(CMAKE_PREFIX_PATH)
-    set(CMAKE_PREFIX_PATH "${HDF5_ROOT};${CMAKE_PREFIX_PATH}")
-  else()
-    set(CMAKE_PREFIX_PATH "${HDF5_ROOT}")
-  endif()
-endif()
-find_package(HDF5 CONFIG REQUIRED COMPONENTS CXX)
+
+find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 # ---- Eigen: support both CONFIG and module modes ----
 find_package(Eigen3 QUIET CONFIG)
@@ -619,9 +608,14 @@ if(HC_INSTALL_DEV_KIT)
     )
 endif()
 
-# ── Debug Symbols in Release Mode ──
-# Keep debug symbols in Release builds for better profiling and crash analysis
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+if(MSVC)
+    # Windows: Enable debug symbols in Release builds with MSVC
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+else()
+    # Non-MSVC (Linux, macOS): Use -g for debug symbols
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -O2")
+endif()
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 7.1 Runtime installer and ZIP packaging for releases
@@ -750,12 +744,15 @@ if(HC_INSTALL_DEV_DEMOS)
 			FILES_MATCHING PATTERN "demo_*.exe")
 endif()
 
+
 # MSVC runtime DLLs and ZIP packaging via CPack
-include(InstallRequiredSystemLibraries)
-set(CPACK_GENERATOR "ZIP")
-set(CPACK_PACKAGE_NAME "HydroChrono")
-set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
-include(CPack)
+ include(InstallRequiredSystemLibraries)
+ set(CPACK_GENERATOR "ZIP")
+ set(CPACK_PACKAGE_NAME "HydroChrono")
+ set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
+ include(CPack)
+
+
 
 # Optionally include Python runtime DLL if Chrono::Parsers depends on it
 find_package(Python3 QUIET COMPONENTS Interpreter)

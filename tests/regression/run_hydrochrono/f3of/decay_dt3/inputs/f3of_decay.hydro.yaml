@@ -10,3 +10,16 @@ hydrodynamics:
   waves:
     type: still
 
+  # System-wide convolution options
+  convolution:
+    mode: TaperedDirect            # Baseline | TaperedDirect
+    smoothing:
+      type: savitzky_golay         # savitzky_golay | moving_average
+      window_length: 5             # odd >= 3 (moving_average uses this; SG is fixed to quadratic, window=5)
+    taper:
+      start_percent: 0.8           # start taper at 80% of total time series (taper last 20%)
+      end_percent: 1.0             # end taper at 100% of total time series
+      final_amplitude: 0.0         # final amplitude (0.0 = zero, 1.0 = no change)
+      end_time: -1.0              # truncate RIRF at this time (seconds), -1.0 = use full length
+    diagnostics:
+      export_csv: true             # per-body CSV for representative channel (step,time,k_before,k_after)

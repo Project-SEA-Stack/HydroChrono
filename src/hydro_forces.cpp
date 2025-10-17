@@ -10,6 +10,7 @@
 #include <hydroc/chloadaddedmass.h>
 #include <hydroc/h5fileinfo.h>
 #include <hydroc/wave_types.h>
+#include <hydroc/logging.h>
 
 #include <chrono/physics/ChLoad.h>
 #include <unsupported/Eigen/Splines>
@@ -25,6 +26,7 @@
 #include <stdexcept>
 #include <vector>
 #include <chrono>
+#include <filesystem>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -376,12 +378,170 @@ inline bool AdvanceToBracket(const std::vector<double>& time_history,
 }
 } // namespace
 
+// Preprocess the radiation kernel K(t) per body for TaperedDirect mode.
+void TestHydro::EnsureProcessedRIRF() {
+    if (rirf_processed_ready_) {
+        return;
+    }
+
+    const int steps = file_info_.GetRIRFDims(2);
+    const int cols  = kDofPerBody * num_bodies_;
+    const int rows  = kDofPerBody;
+
+    rirf_processed_.clear();
+    rirf_processed_.resize(num_bodies_);
+
+    // SG smoothing coefficients for 5-point quadratic: [-3, 12, 17, 12, -3] / 35
+    const double sg5[5] = { -3.0 / 35.0, 12.0 / 35.0, 17.0 / 35.0, 12.0 / 35.0, -3.0 / 35.0 };
+
+    for (int b = 0; b < num_bodies_; ++b) {
+        Eigen::Tensor<double, 3> processed(rows, cols, steps);
+
+        // Calculate effective steps for this body (same for all channels)
+        int effective_steps = steps;
+        if (tapered_opts_.rirf_end_time > 0.0) {
+            // Calculate the step index corresponding to the end time
+            double dt = rirf_time_vector[1] - rirf_time_vector[0]; // assume uniform time step
+            int end_step = static_cast<int>(std::floor(tapered_opts_.rirf_end_time / dt));
+            effective_steps = std::min(end_step, steps);
+        }
+
+        // Diagnostic aggregation across channels
+        int max_tc_index = 0;
+        int max_taper_len = 0;
+        int max_effective_len = steps;
+
+        for (int row_dof = 0; row_dof < rows; ++row_dof) {
+            for (int col = 0; col < cols; ++col) {
+                // Load raw (rho-scaled) kernel time series
+                std::vector<double> k_raw(steps);
+                for (int s = 0; s < steps; ++s) {
+                    k_raw[s] = file_info_.GetRIRFVal(b, row_dof, col, s);
+                }
+                
+                // Apply RIRF truncation if specified
+                if (tapered_opts_.rirf_end_time > 0.0) {
+                    // Truncate the raw kernel
+                    k_raw.resize(effective_steps);
+                }
+
+                // Light smoothing
+                std::vector<double> k_smooth(effective_steps);
+                if (tapered_opts_.smoothing == "moving_average") {
+                    const int w = std::max(3, tapered_opts_.window_length);
+                    const int half = w / 2;
+                    for (int s = 0; s < effective_steps; ++s) {
+                        int a = std::max(0, s - half);
+                        int b = std::min(effective_steps - 1, s + half);
+                        double sum = 0.0; int cnt = 0;
+                        for (int i = a; i <= b; ++i) { sum += k_raw[i]; ++cnt; }
+                        k_smooth[s] = (cnt > 0) ? (sum / cnt) : k_raw[s];
+                    }
+                } else {
+                    // default: SG quadratic with window 5
+                    if (effective_steps >= 5) {
+                        // copy edges as-is for simplicity
+                        k_smooth[0] = k_raw[0];
+                        k_smooth[1] = k_raw[1];
+                        for (int s = 2; s <= effective_steps - 3; ++s) {
+                            k_smooth[s] = sg5[0] * k_raw[s - 2] + sg5[1] * k_raw[s - 1] + sg5[2] * k_raw[s] + sg5[3] * k_raw[s + 1] + sg5[4] * k_raw[s + 2];
+                        }
+                        k_smooth[effective_steps - 2] = k_raw[effective_steps - 2];
+                        k_smooth[effective_steps - 1] = k_raw[effective_steps - 1];
+                    } else {
+                        k_smooth = k_raw; // too short to smooth
+                    }
+                }
+
+                // Simple taper control: start and end percentages
+                int tc_index = static_cast<int>(std::floor(tapered_opts_.taper_start_percent * static_cast<double>(effective_steps)));
+                int tc_end = static_cast<int>(std::floor(tapered_opts_.taper_end_percent * static_cast<double>(effective_steps)));
+                tc_index = std::max(0, std::min(tc_index, effective_steps));
+                tc_end = std::max(tc_index, std::min(tc_end, effective_steps));
+
+                // Apply half-cosine taper from start to end percentage
+                int taper_len = tc_end - tc_index;
+                int effective_len = tc_end;
+
+                const double pi_const = 3.14159265358979323846;
+                for (int s = 0; s < effective_steps; ++s) {
+                    double val = k_smooth[s];
+                    if (s < tc_index) {
+                        // keep original value
+                    } else if (s < tc_end && taper_len > 0) {
+                        double t = (static_cast<double>(s - tc_index)) / static_cast<double>(taper_len);
+                        // Half-cosine taper: goes from 1.0 to taper_final_amplitude
+                        // taper_final_amplitude = 0.0 means complete zero, 1.0 means no change
+                        double w = tapered_opts_.taper_final_amplitude + (1.0 - tapered_opts_.taper_final_amplitude) * 0.5 * (1.0 + std::cos(pi_const * t));
+                        val *= w;
+                    } else {
+                        val = 0.0;
+                    }
+                    processed(row_dof, col, s) = val;
+                }
+                
+                // Zero out any remaining steps beyond effective_steps
+                for (int s = effective_steps; s < steps; ++s) {
+                    processed(row_dof, col, s) = 0.0;
+                }
+
+                if (tc_index > max_tc_index) max_tc_index = tc_index;
+                if (taper_len > max_taper_len) max_taper_len = taper_len;
+                if (effective_len > max_effective_len) max_effective_len = effective_len;
+            }
+        }
+
+        rirf_processed_[b] = std::move(processed);
+
+        LOG_DEBUG("TaperedDirect kernel (body " << b
+                  << ") Start: " << tapered_opts_.taper_start_percent
+                  << ", End: " << tapered_opts_.taper_end_percent
+                  << ", Final Amp: " << tapered_opts_.taper_final_amplitude
+                  << ", RIRF End Time: " << (tapered_opts_.rirf_end_time > 0.0 ? std::to_string(tapered_opts_.rirf_end_time) + "s" : "full")
+                  << ", Max Tc index: " << max_tc_index
+                  << ", Max taper length: " << max_taper_len
+                  << ", Max effective length: " << max_effective_len
+                  << "/" << steps);
+
+        if (tapered_opts_.export_plot_csv) {
+            // Write small CSV summaries for inspection: times, representative channel before/after
+            try {
+                const std::string base = std::string("rirf_body") + std::to_string(b) + std::string("_summary.csv");
+                std::filesystem::path out_dir = diagnostics_output_dir_.empty() ? std::filesystem::current_path() : std::filesystem::path(diagnostics_output_dir_);
+                std::filesystem::path out_path = out_dir / base;
+                std::ofstream ofs(out_path.string());
+                ofs << "step,time,k_before,k_after\n";
+                // pick row=0,col=0 as representative
+                for (int s = 0; s < effective_steps; ++s) {
+                    double t = (s < rirf_time_vector.size()) ? rirf_time_vector[s] : static_cast<double>(s);
+                    double before = file_info_.GetRIRFVal(b, 0, 0, s);
+                    double after = rirf_processed_[b](0, 0, s);
+                    ofs << s << "," << t << "," << before << "," << after << "\n";
+                }
+                // Only log the directory once (body 0)
+                if (b == 0) {
+                    LOG_INFO("RIRF CSVs written in " << out_dir.string());
+                }
+            } catch (...) {
+                // ignore export errors
+            }
+        }
+    }
+
+    rirf_processed_ready_ = true;
+}
+
 std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
     auto __t0 = std::chrono::steady_clock::now();
     const int rirf_steps = file_info_.GetRIRFDims(2);
     const int total_dofs = kDofPerBody * num_bodies_;
 
     assert(total_dofs > 0 && rirf_steps > 0);
+
+    // If using TaperedDirect, ensure processed kernel is ready before any parallel region
+    if (convolution_mode_ == RadiationConvolutionMode::TaperedDirect) {
+        EnsureProcessedRIRF();
+    }
 
     // Current time and minimum history time window required
     const double simulation_time = bodies_[0]->GetChTime();
@@ -536,6 +696,13 @@ double TestHydro::GetRIRFval(int row, int col, int st) {
     int body_index = row / kDofPerBody;
     int col_dof    = col % kDofPerBody;
     int row_dof    = row % kDofPerBody;
+
+    if (convolution_mode_ == RadiationConvolutionMode::TaperedDirect) {
+        EnsureProcessedRIRF();
+        // processed tensor is scaled by rho already
+        const auto& tensor = rirf_processed_[body_index];
+        return tensor(row_dof, col, st);
+    }
 
     return file_info_.GetRIRFVal(body_index, row_dof, col, st);
 }

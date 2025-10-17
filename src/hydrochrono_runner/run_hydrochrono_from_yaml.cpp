@@ -437,6 +437,7 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     hydroc::debug::LogDebug("Parsing hydro file...");
                     hydro_data = ReadHydroYAML(hydro_file.string());
                     hydroc::debug::LogDebug(std::string("Parsed ") + std::to_string(hydro_data.bodies.size()) + " body(ies)");
+                    // (Removed verbose parsed-mode line from CLI)
                     
                     // Get all bodies from the system
                     hydroc::debug::LogDebug("Finding Chrono bodies in system...");
@@ -451,6 +452,15 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     // Provide a neutral horizon (Chrono governs runtime via YAML/UI)
                     test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, /*time_end_hint*/ 0.0, 0.0);
                     hydroc::debug::LogDebug("Hydrodynamic forces initialized successfully");
+
+                    // Inform location for diagnostics CSVs: write to hydro file directory
+                    try {
+                        std::filesystem::path hydro_path = std::filesystem::path(input_directory) / setup_config.hydro_file;
+                        std::filesystem::path out_dir = hydro_path.parent_path();
+                        if (test_hydro) {
+                            test_hydro->SetDiagnosticsOutputDirectory(out_dir.string());
+                        }
+                    } catch (...) {}
                     
                     // Display wave information to CLI with enhanced formatting
                     hydroc::cli::ShowWaveModel(hydro_data.waves.type, 

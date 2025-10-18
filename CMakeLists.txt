@@ -147,11 +147,27 @@ endif()
 
 # Now we can find Chrono (which assumes Irrlicht::Irrlicht already exists)
 find_package(Chrono CONFIG REQUIRED)
+message(STATUS "Chrono core targets: ${Chrono_LIBRARIES}")
+
+if(EXISTS "${Chrono_DIR}/ChronoTargets.cmake")
+    include("${Chrono_DIR}/ChronoTargets.cmake")
+    message(STATUS "Manually included ChronoTargets.cmake from ${Chrono_DIR}")
+endif()
+
 
 # Verify required Chrono targets are available
 if(NOT TARGET Chrono::Chrono_core)
 	message(FATAL_ERROR "Chrono::Chrono_core target not found. Ensure Chrono was built with modern CMake target exports.")
 endif()
+# Find OpenMP first to ensure OpenMP::OpenMP_CXX is available
+find_package(OpenMP REQUIRED)
+
+if(OpenMP_CXX_FOUND)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
+# Then include Chrono
+find_package(Chrono REQUIRED PATHS /usr/local/lib/cmake/Chrono)
 
 # Enable Irrlicht support if requested and available
 if(HYDROCHRONO_ENABLE_IRRLICHT)
@@ -207,8 +223,6 @@ if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED Chrono_DIR)
     set(HC_CHRONO_INCLUDE_DIRS "${_CHR_INC_CAND}")
   endif()
 endif()
-
-
 
 
 #-----------------------------------------------------------------------------

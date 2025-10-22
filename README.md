@@ -13,7 +13,7 @@ HydroChrono (Hydrodynamics for Project Chrono) is a hydrodynamics simulation too
 
 📄 Publications: See the end of this README.
 
-🌐 Website: https://nrel.github.io/HydroChrono/
+🌐 Website: https://project-sea-stack.github.io/HydroChrono/
 
 ## What it does (under the hood)
 

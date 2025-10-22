@@ -146,7 +146,10 @@ if(HYDROCHRONO_ENABLE_IRRLICHT)
 endif()
 
 # Now we can find Chrono (which assumes Irrlicht::Irrlicht already exists)
-find_package(Chrono CONFIG REQUIRED)
+find_package(Chrono
+             CONFIG REQUIRED
+             COMPONENTS Parsers
+             OPTIONAL_COMPONENTS Irrlicht)
 message(STATUS "Chrono core targets: ${Chrono_LIBRARIES}")
 
 if(EXISTS "${Chrono_DIR}/ChronoTargets.cmake")
@@ -167,7 +170,6 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 # Then include Chrono
-find_package(Chrono REQUIRED PATHS /usr/local/lib/cmake/Chrono)
 
 # Enable Irrlicht support if requested and available
 if(HYDROCHRONO_ENABLE_IRRLICHT)
@@ -489,7 +491,6 @@ else()
 endif()
 target_link_libraries(HydroChrono
   PUBLIC
-    ${CHRONO_TARGETS}             # Chrono::Chrono_core;Chrono::Chrono_irrlicht;...
     $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
 )
 
@@ -537,7 +538,6 @@ target_link_options(HydroChronoGUI BEFORE
 
 target_link_libraries(HydroChronoGUI
   PUBLIC
-    ${CHRONO_TARGETS}
     $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
 )
 

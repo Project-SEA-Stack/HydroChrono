@@ -20,7 +20,7 @@ endif()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 project(HydroChrono 
-	VERSION 0.3
+	VERSION 0.3.1
 	DESCRIPTION "Hydrodynamics for Project Chrono."
 	LANGUAGES CXX
 )

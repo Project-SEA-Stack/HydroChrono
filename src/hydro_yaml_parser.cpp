@@ -496,7 +496,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                             t += step;
                         }
                         if (inclusive) {
-                            if (std::fabs((data.waves.period_values.empty() ? start : data.waves.period_values.back()) - stop) > eps) {
+                            if (std::abs((data.waves.period_values.empty() ? start : data.waves.period_values.back()) - stop) > eps) {
                                 // add last if not already close to stop and within tolerance by stepping once more would overshoot but inclusive means include stop
                                 data.waves.period_values.push_back(stop);
                             } else {

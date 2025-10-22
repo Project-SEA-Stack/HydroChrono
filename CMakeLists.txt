@@ -20,7 +20,7 @@ endif()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 project(HydroChrono 
-	VERSION 0.3
+	VERSION 0.3.1
 	DESCRIPTION "Hydrodynamics for Project Chrono."
 	LANGUAGES CXX
 )
@@ -147,11 +147,27 @@ endif()
 
 # Now we can find Chrono (which assumes Irrlicht::Irrlicht already exists)
 find_package(Chrono CONFIG REQUIRED)
+message(STATUS "Chrono core targets: ${Chrono_LIBRARIES}")
+
+if(EXISTS "${Chrono_DIR}/ChronoTargets.cmake")
+    include("${Chrono_DIR}/ChronoTargets.cmake")
+    message(STATUS "Manually included ChronoTargets.cmake from ${Chrono_DIR}")
+endif()
+
 
 # Verify required Chrono targets are available
 if(NOT TARGET Chrono::Chrono_core)
 	message(FATAL_ERROR "Chrono::Chrono_core target not found. Ensure Chrono was built with modern CMake target exports.")
 endif()
+# Find OpenMP first to ensure OpenMP::OpenMP_CXX is available
+find_package(OpenMP REQUIRED)
+
+if(OpenMP_CXX_FOUND)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
+# Then include Chrono
+find_package(Chrono REQUIRED PATHS /usr/local/lib/cmake/Chrono)
 
 # Enable Irrlicht support if requested and available
 if(HYDROCHRONO_ENABLE_IRRLICHT)
@@ -175,19 +191,8 @@ endif()
 
 # ── HDF5 Integration ──
 # Prefer config package at provided root; avoid environment/registry
-if(DEFINED HDF5_DIR AND NOT DEFINED HDF5_ROOT)
-  set(HDF5_ROOT "${HDF5_DIR}")
-endif()
-set(HDF5_ROOT "${HDF5_ROOT}" CACHE PATH "HDF5 root directory")
-if(DEFINED HDF5_ROOT)
-  # Prepend so our supplied root wins
-  if(CMAKE_PREFIX_PATH)
-    set(CMAKE_PREFIX_PATH "${HDF5_ROOT};${CMAKE_PREFIX_PATH}")
-  else()
-    set(CMAKE_PREFIX_PATH "${HDF5_ROOT}")
-  endif()
-endif()
-find_package(HDF5 CONFIG REQUIRED COMPONENTS CXX)
+
+find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 # ---- Eigen: support both CONFIG and module modes ----
 find_package(Eigen3 QUIET CONFIG)
@@ -218,8 +223,6 @@ if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED Chrono_DIR)
     set(HC_CHRONO_INCLUDE_DIRS "${_CHR_INC_CAND}")
   endif()
 endif()
-
-
 
 
 #-----------------------------------------------------------------------------
@@ -619,9 +622,14 @@ if(HC_INSTALL_DEV_KIT)
     )
 endif()
 
-# ── Debug Symbols in Release Mode ──
-# Keep debug symbols in Release builds for better profiling and crash analysis
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+if(MSVC)
+    # Windows: Enable debug symbols in Release builds with MSVC
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+else()
+    # Non-MSVC (Linux, macOS): Use -g for debug symbols
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -O2")
+endif()
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 7.1 Runtime installer and ZIP packaging for releases
@@ -750,12 +758,15 @@ if(HC_INSTALL_DEV_DEMOS)
 			FILES_MATCHING PATTERN "demo_*.exe")
 endif()
 
+
 # MSVC runtime DLLs and ZIP packaging via CPack
-include(InstallRequiredSystemLibraries)
-set(CPACK_GENERATOR "ZIP")
-set(CPACK_PACKAGE_NAME "HydroChrono")
-set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
-include(CPack)
+ include(InstallRequiredSystemLibraries)
+ set(CPACK_GENERATOR "ZIP")
+ set(CPACK_PACKAGE_NAME "HydroChrono")
+ set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
+ include(CPack)
+
+
 
 # Optionally include Python runtime DLL if Chrono::Parsers depends on it
 find_package(Python3 QUIET COMPONENTS Interpreter)

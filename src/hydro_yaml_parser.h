@@ -19,4 +19,11 @@
  */
 YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path);
 
+// Optional helper to parse convolution mode string
+enum class RadiationConvolutionModeParsed {
+    Baseline,
+    TaperedDirect
+};
+
+
 #endif  // HYDRO_YAML_PARSER_H

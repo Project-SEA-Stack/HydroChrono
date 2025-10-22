@@ -149,6 +149,16 @@ class ForceFunc6d {
 
 class ChLoadAddedMass;
 
+// Lightweight hydrodynamics profiling stats
+struct HydroProfileStats {
+    double hydrostatics_seconds = 0.0;
+    double radiation_seconds    = 0.0;
+    double waves_seconds        = 0.0;
+    int hydrostatics_calls      = 0;
+    int radiation_calls         = 0;
+    int waves_calls             = 0;
+};
+
 // TODO: Rename TestHydro for clarity, perhaps to HydroForces?
 // TODO: Split TestHydro class from its helper classes for clearer code structure.
 class TestHydro {
@@ -220,6 +230,42 @@ class TestHydro {
      */
     double GetRIRFval(int row, int col, int st);
 
+    // Convolution mode selection
+    enum class RadiationConvolutionMode {
+        Baseline,
+        TaperedDirect
+    };
+
+    /**
+     * @brief Set the radiation convolution mode. Default is Baseline.
+     */
+    void SetRadiationConvolutionMode(RadiationConvolutionMode mode) { convolution_mode_ = mode; }
+
+        struct TaperedDirectOptions {
+            // smoothing: "sg" (Savitzky–Golay) or "moving_average"
+            std::string smoothing = "sg";
+            int window_length = 5;                 // odd, >= 3
+            
+            // RIRF truncation
+            double rirf_end_time = -1.0;           // end RIRF at this time (seconds), -1.0 = use full length
+            
+            // Simple taper control - sensible defaults for improved stability
+            double taper_start_percent = 0.8;      // start taper at 80% (taper last 20%)
+            double taper_end_percent = 1.0;        // end taper at 100% of total time series  
+            double taper_final_amplitude = 0.0;    // final amplitude as fraction of original (0.0 = zero, 1.0 = no change)
+            bool export_plot_csv = false;          // dump before/after CSV summaries (false by default)
+        };
+
+    /**
+     * @brief Set options for TaperedDirect preprocessing.
+     */
+    void SetTaperedDirectOptions(const TaperedDirectOptions& opts) { tapered_opts_ = opts; }
+
+    /**
+     * @brief Set the directory where diagnostics (e.g., CSVs) should be written.
+     */
+    void SetDiagnosticsOutputDirectory(const std::string& dir) { diagnostics_output_dir_ = dir; }
+
     /**
      * @brief Calculates or retrieves the total force on a specific body in a particular degree of freedom.
      *
@@ -232,6 +278,9 @@ class TestHydro {
      * @return Component of the force vector for body 'b' and DOF 'i'.
      */
     double CoordinateFuncForBody(int b, int i);
+
+    // Hydrodynamics profiling accessors
+    HydroProfileStats GetProfileStats() const { return profile_stats_; }
 
   private:
     // Class properties related to the body and hydrodynamics
@@ -281,6 +330,18 @@ class TestHydro {
      * @param index The DOF index, ranging from [0,1,...,5].
      */
     double SetVelHistory(double val, int step, int b_num, int index);
+
+    // Hydrodynamics profiling data (accumulated over run)
+    HydroProfileStats profile_stats_;
+
+    // Convolution kernel preprocessing (optional)
+    RadiationConvolutionMode convolution_mode_ = RadiationConvolutionMode::Baseline;
+    bool rirf_processed_ready_ = false;
+    std::vector<Eigen::Tensor<double, 3>> rirf_processed_; // per body [dof x col x step]
+    TaperedDirectOptions tapered_opts_;
+    std::string diagnostics_output_dir_;
+
+    void EnsureProcessedRIRF();
 };
 
 #endif

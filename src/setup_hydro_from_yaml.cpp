@@ -145,6 +145,48 @@ std::unique_ptr<TestHydro> SetupHydroFromYAML(
     auto test_hydro = std::make_unique<TestHydro>(matched_bodies, h5_file_path, wave);
     
     hydroc::debug::LogDebug(std::string("Initialized TestHydro with ") + std::to_string(matched_bodies.size()) + " bodies");
+
+    // System-wide convolution settings
+    std::string mode = hydro_data.radiation_convolution_mode;
+    hydroc::debug::LogDebug("Parsed convolution mode: '" + mode + "'");
+    std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+    hydroc::debug::LogDebug("Lowercase mode: '" + mode + "'");
+    if (mode == "tapereddirect") {
+        test_hydro->SetRadiationConvolutionMode(TestHydro::RadiationConvolutionMode::TaperedDirect);
+        hydroc::debug::LogDebug("Radiation convolution mode: TaperedDirect");
+        TestHydro::TaperedDirectOptions opts;
+        opts.smoothing = !hydro_data.td_smoothing.empty() ? hydro_data.td_smoothing : opts.smoothing;
+        opts.window_length = std::max(3, hydro_data.td_window_length != 0 ? hydro_data.td_window_length : opts.window_length);
+        if (opts.window_length % 2 == 0) opts.window_length += 1; // enforce odd
+        
+        // RIRF truncation
+        opts.rirf_end_time = hydro_data.td_rirf_end_time;
+        
+        // Simple taper control
+        opts.taper_start_percent = hydro_data.td_taper_start_percent;
+        opts.taper_end_percent = hydro_data.td_taper_end_percent;
+        opts.taper_final_amplitude = hydro_data.td_taper_final_amplitude;
+        opts.export_plot_csv = hydro_data.td_export_plot_csv;
+        test_hydro->SetTaperedDirectOptions(opts);
+
+        // CLI inline bullets near main summary
+        hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Convolution Mode", "TaperedDirect"));
+        if (hydroc::debug::IsDebugEnabled()) {
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Smoothing", opts.smoothing));
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Window Length", std::to_string(opts.window_length)));
+            if (opts.rirf_end_time > 0.0) {
+                hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv RIRF End Time", std::to_string(opts.rirf_end_time) + "s"));
+            }
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Taper Start %", std::to_string(opts.taper_start_percent)));
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Taper End %", std::to_string(opts.taper_end_percent)));
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Taper Final Amp", std::to_string(opts.taper_final_amplitude)));
+            hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Conv Export CSV", (opts.export_plot_csv ? "true" : "false")));
+        }
+    } else {
+        test_hydro->SetRadiationConvolutionMode(TestHydro::RadiationConvolutionMode::Baseline);
+        hydroc::debug::LogDebug("Radiation convolution mode: Baseline");
+        hydroc::cli::LogInfo(hydroc::cli::CreateAlignedLine("•", "Convolution Mode", "Baseline"));
+    }
     
     return test_hydro;
 }

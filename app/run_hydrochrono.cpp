@@ -83,6 +83,7 @@ struct CLIArgs {
     bool h5_verbose = false;            // NEW: HDF5 verbose diagnostics
     std::string h5_tag;                 // NEW: Optional tag appended to filename
     bool fail_fast = false;             // NEW: Stop on first failure during sweep
+    bool profile = false;               // NEW: Enable runtime profiling summary
 };
 
 static CLIArgs ParseArguments(int argc, char* argv[]) {
@@ -136,6 +137,8 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
             }
         } else if (arg == "--fail-fast") {
             args.fail_fast = true;
+        } else if (arg == "--profile") {
+            args.profile = true;
         } else if (arg.substr(0, 1) != "-") {
             // This is a positional argument (input directory)
             if (args.input_directory.empty()) {
@@ -284,6 +287,10 @@ int main(int argc, char* argv[]) {
     
     if (args.trace) {
         runner_args.push_back("--trace");
+    }
+    
+    if (args.profile) {
+        runner_args.push_back("--profile");
     }
     
     if (!args.model_file.empty()) {

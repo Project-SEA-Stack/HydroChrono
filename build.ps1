@@ -603,11 +603,20 @@ function Get-BuildArguments {
     $irrlicht   = ($Config.IrrlichtDir -replace '\\','/')
     $irrlichtDllWin = Join-Path $Config.IrrlichtDir "bin\Win64-VisualStudio\Irrlicht.dll"
     $irrlichtDll = ($irrlichtDllWin -replace '\\','/')
+    $irrlichtFlag = if ($Config.IrrlichtDir -and (Test-Path $Config.IrrlichtDir)) { "ON" } else { "OFF" }
 
     # Deterministic prefix path so our roots win over ambient environment
     $prefixParts = @()
     foreach ($p in @($Config.ChronoDir, $Config.Hdf5Dir, $Config.EigenDir, $Config.IrrlichtDir, $Config.PythonRoot)) {
-        if ($p -and (Test-Path $p)) { $prefixParts += ($p -replace '\\','/') }
+        if ($p) {
+            $isValid = $false
+            try { $null = [System.IO.Path]::GetFullPath($p); $isValid = $true } catch { $isValid = $false }
+            if ($isValid) {
+                try {
+                    if (Test-Path -LiteralPath $p) { $prefixParts += ($p -replace '\\','/') }
+                } catch { }
+            }
+        }
     }
     $prefixPath = ($prefixParts -join ';')
     $testsFlag = if ($NoTests) { "OFF" } else { "ON" }
@@ -623,6 +632,7 @@ function Get-BuildArguments {
         "-DEIGEN3_INCLUDE_DIR=`"$eigenDir`"",
         "-DIrrlicht_ROOT=`"$irrlicht`"",
         "-DIRRLICHT_DLL_PATH=`"$irrlichtDll`"",
+        "-DHYDROCHRONO_ENABLE_IRRLICHT=`"$irrlichtFlag`"",
         "-DCMAKE_PREFIX_PATH=`"$prefixPath`"",
         "-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON",
         "-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF",

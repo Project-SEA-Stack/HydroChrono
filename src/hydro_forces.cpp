@@ -10,6 +10,7 @@
 #include <hydroc/chloadaddedmass.h>
 #include <hydroc/h5fileinfo.h>
 #include <hydroc/wave_types.h>
+#include <hydroc/logging.h>
 
 #include <chrono/physics/ChLoad.h>
 #include <unsupported/Eigen/Splines>
@@ -24,6 +25,12 @@
 #include <random>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
+#include <filesystem>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 const int kDofPerBody  = 6;
 const int kDofLinOrRot = 3;
@@ -251,145 +258,432 @@ void TestHydro::AddWaves(std::shared_ptr<WaveBase> waves) {
 }
 
 std::vector<double> TestHydro::ComputeForceHydrostatics() {
+    auto __t0 = std::chrono::steady_clock::now();
     assert(num_bodies_ > 0);
 
     const double rho = file_info_.GetRhoVal();
-    const auto g_acc = bodies_[0]->GetSystem()->GetGravitationalAcceleration();  // assuming all bodies in same system
-    const double gg  = g_acc.Length();
+    const auto gravitational_acceleration = bodies_[0]->GetSystem()->GetGravitationalAcceleration();  // same system for all bodies
+    const double rho_times_g = rho * gravitational_acceleration.Length();
 
-    for (int b = 0; b < num_bodies_; b++) {
-        std::shared_ptr<chrono::ChBody> body = bodies_[b];
+    for (int b = 0; b < num_bodies_; ++b) {
+        const auto& body = bodies_[b];
 
-        int b_offset                   = kDofPerBody * b;
-        double* body_force_hydrostatic = &force_hydrostatic_[b_offset];
-        double* body_equilibrium       = &equilibrium_[b_offset];
+        const int body_offset = kDofPerBody * b;
+        double* const body_force_hydrostatic = &force_hydrostatic_[body_offset];
+        const double* const body_equilibrium = &equilibrium_[body_offset];
 
-        // hydrostatic stiffness due to offset from equilibrium
-        const auto body_position = body->GetPos();
-        const auto body_rotation = body->GetRot().GetCardanAnglesXYZ();
+        // Current pose
+        const chrono::ChVector3d position_world = body->GetPos();
+        const chrono::ChVector3d rotation_rpy   = body->GetRot().GetCardanAnglesXYZ();
 
-        chrono::ChVectorN<double, kDofPerBody> body_displacement;
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_displacement[ii]                = body_position[ii] - body_equilibrium[ii];
-            body_displacement[ii + kDofLinOrRot] = body_rotation[ii] - body_equilibrium[ii + kDofLinOrRot];
+        // 6-DOF displacement from equilibrium (translation xyz, rotation rpy)
+        Eigen::Matrix<double, kDofPerBody, 1> displacement_from_equilibrium;
+        displacement_from_equilibrium[0] = position_world.x() - body_equilibrium[0];
+        displacement_from_equilibrium[1] = position_world.y() - body_equilibrium[1];
+        displacement_from_equilibrium[2] = position_world.z() - body_equilibrium[2];
+        displacement_from_equilibrium[3] = rotation_rpy.x()   - body_equilibrium[3];
+        displacement_from_equilibrium[4] = rotation_rpy.y()   - body_equilibrium[4];
+        displacement_from_equilibrium[5] = rotation_rpy.z()   - body_equilibrium[5];
+
+        // Linear hydrostatic restoring force/torque
+        const Eigen::MatrixXd restoring_stiffness_matrix = file_info_.GetLinMatrix(b);
+        const Eigen::Matrix<double, kDofPerBody, 1> restoring_force_torque =
+            -rho_times_g * (restoring_stiffness_matrix * displacement_from_equilibrium);
+        for (int i = 0; i < kDofPerBody; ++i) {
+            body_force_hydrostatic[i] += restoring_force_torque[i];
         }
 
-        const auto force_offset = -gg * rho * file_info_.GetLinMatrix(b) * body_displacement;
-        for (int dof = 0; dof < kDofPerBody; dof++) {
-            body_force_hydrostatic[dof] += force_offset[dof];
-        }
+        // Buoyancy force at equilibrium: F = rho * (-g) * displaced_volume
+        const double displaced_volume = file_info_.GetDispVolVal(b);
+        const chrono::ChVector3d buoyancy_force = rho * (-gravitational_acceleration) * displaced_volume;
+        body_force_hydrostatic[0] += buoyancy_force.x();
+        body_force_hydrostatic[1] += buoyancy_force.y();
+        body_force_hydrostatic[2] += buoyancy_force.z();
 
-        // buoyancy at equilibrium
-        const auto buoyancy = rho * (-g_acc) * file_info_.GetDispVolVal(b);
-
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_force_hydrostatic[ii] += buoyancy[ii];
-        }
-
-        int r_offset = kDofLinOrRot * b;
-        const auto cg2cb =
-            chrono::ChVector3d(cb_minus_cg_[r_offset], cb_minus_cg_[r_offset + 1], cb_minus_cg_[r_offset + 2]);
-        const auto buoyancy2 = cg2cb % buoyancy;
-
-        for (int ii = 0; ii < kDofLinOrRot; ii++) {
-            body_force_hydrostatic[ii + kDofLinOrRot] += buoyancy2[ii];
-        }
+        // Buoyancy-induced moment about CG: (r_CB - r_CG) x buoyancy
+        const int rotation_offset = kDofLinOrRot * b;
+        const chrono::ChVector3d cg_to_cb(
+            cb_minus_cg_[rotation_offset + 0],
+            cb_minus_cg_[rotation_offset + 1],
+            cb_minus_cg_[rotation_offset + 2]
+        );
+        const chrono::ChVector3d buoyancy_torque = cg_to_cb % buoyancy_force;
+        body_force_hydrostatic[3] += buoyancy_torque.x();
+        body_force_hydrostatic[4] += buoyancy_torque.y();
+        body_force_hydrostatic[5] += buoyancy_torque.z();
     }
 
+    profile_stats_.hydrostatics_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.hydrostatics_calls++;
     return force_hydrostatic_;
 }
 
-std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
-    const int size    = file_info_.GetRIRFDims(2);
-    const int numRows = kDofPerBody * num_bodies_;
-    const int numCols = kDofPerBody * num_bodies_;
-
-    assert(numRows * size > 0 && numCols > 0);
-
-    // time history
-    auto t_sim = bodies_[0]->GetChTime();
-    auto t_min = t_sim - rirf_time_vector.tail<1>()[0];
-    if (time_history_.size() > 0 && t_sim == time_history_.front()) {
-        throw std::runtime_error("Tried to compute the radiation damping convolution twice within the same time step!");
-    }
-    time_history_.insert(time_history_.begin(), t_sim);
-
-    // velocity history
-    for (int b = 0; b < num_bodies_; b++) {
-        auto& body                  = bodies_[b];
-        auto& velocity_history_body = velocity_history_[b];
-
-        auto vel                    = body->GetPosDt();
-        auto wvel                   = body->GetAngVelParent();
-        std::vector<double> vel_vec = {vel[0], vel[1], vel[2], wvel[0], wvel[1], wvel[2]};
-        velocity_history_body.insert(velocity_history_body.begin(), vel_vec);
-    }
-
-    // remove unnecessary history
-    if (time_history_.size() > 1) {
-        while (time_history_[time_history_.size() - 2] < t_min) {
-            time_history_.pop_back();
-            for (int b = 0; b < num_bodies_; b++) {
-                auto& velocity_history_body = velocity_history_[b];
+// Internal helpers (file-local)
+namespace {
+// Remove history entries older than history_min_time.
+inline void PruneHistory(std::vector<double>& time_history,
+                         std::vector<std::vector<std::vector<double>>>& velocity_history,
+                         int num_bodies,
+                         double history_min_time) {
+    while (time_history.size() > 1 && time_history[time_history.size() - 2] < history_min_time) {
+        time_history.pop_back();
+        for (int b = 0; b < num_bodies; ++b) {
+            auto& velocity_history_body = velocity_history[b];
+            if (!velocity_history_body.empty()) {
                 velocity_history_body.pop_back();
             }
         }
     }
+}
 
-    if (time_history_.size() > 1) {
-        int idx_history = 0;
+// Interpolate 6-DOF velocities at a query time from two bracketing samples.
+inline void InterpolateVelocity6D(const std::vector<std::vector<double>>& velocity_history_body,
+                                  size_t newer_index,
+                                  double query_time,
+                                  double older_time,
+                                  double newer_time,
+                                  double out_velocity[kDofPerBody]) {
+    if (query_time == older_time) {
+        const auto& older_velocity = velocity_history_body[newer_index + 1];
+        for (int dof = 0; dof < kDofPerBody; ++dof) out_velocity[dof] = older_velocity[dof];
+        return;
+    }
+    if (query_time == newer_time) {
+        const auto& newer_velocity = velocity_history_body[newer_index];
+        for (int dof = 0; dof < kDofPerBody; ++dof) out_velocity[dof] = newer_velocity[dof];
+        return;
+    }
+    if (query_time > older_time && query_time < newer_time) {
+        const double time_delta   = (newer_time - older_time);
+        const double weight_older = (time_delta != 0.0) ? ((newer_time - query_time) / time_delta) : 0.0;
+        const double weight_newer = 1.0 - weight_older;
+        const auto& older_velocity = velocity_history_body[newer_index + 1];
+        const auto& newer_velocity = velocity_history_body[newer_index];
+        for (int dof = 0; dof < kDofPerBody; ++dof) {
+            out_velocity[dof] = weight_older * older_velocity[dof] + weight_newer * newer_velocity[dof];
+        }
+        return;
+    }
+    throw std::runtime_error("Radiation convolution: interpolation error; query_time not bracketed by history.");
+}
 
-        // iterate over RIRF steps
-        for (int step = 0; step < size; step++) {
-            auto t_rirf = t_sim - rirf_time_vector[step];
-            while (time_history_[idx_history + 1] > t_rirf && idx_history < time_history_.size() - 1) {
-                idx_history += 1;
-            }
-            if (idx_history >= time_history_.size() - 1) {
-                break;
-            }
+// Advance index so that time_history[index] >= query_time >= time_history[index+1] (newest first ordering).
+inline bool AdvanceToBracket(const std::vector<double>& time_history,
+                             size_t& index,
+                             double query_time) {
+    while ((index + 1) < time_history.size() && time_history[index + 1] > query_time) {
+        ++index;
+    }
+    return ((index + 1) < time_history.size());
+}
+} // namespace
 
-            // iterate over bodies
-            for (int idx_body = 0; idx_body < num_bodies_; idx_body++) {
-                auto& velocity_history_body = velocity_history_[idx_body];
-                std::vector<double> vel(kDofPerBody);
+// Preprocess the radiation kernel K(t) per body for TaperedDirect mode.
+void TestHydro::EnsureProcessedRIRF() {
+    if (rirf_processed_ready_) {
+        return;
+    }
 
-                // interpolate velocity at t_rirf from recorded velocity history
-                // time values
-                auto t1 = time_history_[idx_history + 1];
-                auto t2 = time_history_[idx_history];
-                if (t_rirf == t1) {
-                    vel = velocity_history_body[idx_history + 1];
-                } else if (t_rirf == t2) {
-                    vel = velocity_history_body[idx_history];
-                } else if (t_rirf > t1 && t_rirf < t2) {
-                    // weights
-                    auto w1 = (t2 - t_rirf) / (t2 - t1);
-                    auto w2 = 1.0 - w1;
-                    // velocity values
-                    auto vel1 = velocity_history_body[idx_history + 1];
-                    auto vel2 = velocity_history_body[idx_history];
-                    for (int dof = 0; dof < kDofPerBody; dof++) {
-                        vel[dof] = w1 * vel1[dof] + w2 * vel2[dof];
-                    }
-                } else {
-                    throw std::runtime_error("Radiation convolution: wrong interpolation: " + std::to_string(t_rirf) +
-                                             " not between " + std::to_string(t1) + " and " + std::to_string(t2) + ".");
+    const int steps = file_info_.GetRIRFDims(2);
+    const int cols  = kDofPerBody * num_bodies_;
+    const int rows  = kDofPerBody;
+
+    rirf_processed_.clear();
+    rirf_processed_.resize(num_bodies_);
+
+    // SG smoothing coefficients for 5-point quadratic: [-3, 12, 17, 12, -3] / 35
+    const double sg5[5] = { -3.0 / 35.0, 12.0 / 35.0, 17.0 / 35.0, 12.0 / 35.0, -3.0 / 35.0 };
+
+    for (int b = 0; b < num_bodies_; ++b) {
+        Eigen::Tensor<double, 3> processed(rows, cols, steps);
+
+        // Calculate effective steps for this body (same for all channels)
+        int effective_steps = steps;
+        if (tapered_opts_.rirf_end_time > 0.0) {
+            // Calculate the step index corresponding to the end time
+            double dt = rirf_time_vector[1] - rirf_time_vector[0]; // assume uniform time step
+            int end_step = static_cast<int>(std::floor(tapered_opts_.rirf_end_time / dt));
+            effective_steps = std::min(end_step, steps);
+        }
+
+        // Diagnostic aggregation across channels
+        int max_tc_index = 0;
+        int max_taper_len = 0;
+        int max_effective_len = steps;
+
+        for (int row_dof = 0; row_dof < rows; ++row_dof) {
+            for (int col = 0; col < cols; ++col) {
+                // Load raw (rho-scaled) kernel time series
+                std::vector<double> k_raw(steps);
+                for (int s = 0; s < steps; ++s) {
+                    k_raw[s] = file_info_.GetRIRFVal(b, row_dof, col, s);
+                }
+                
+                // Apply RIRF truncation if specified
+                if (tapered_opts_.rirf_end_time > 0.0) {
+                    // Truncate the raw kernel
+                    k_raw.resize(effective_steps);
                 }
 
-                for (int dof = 0; dof < kDofPerBody; dof++) {
-                    // get column index
-                    int col = dof + idx_body * kDofPerBody;
+                // Light smoothing
+                std::vector<double> k_smooth(effective_steps);
+                if (tapered_opts_.smoothing == "moving_average") {
+                    const int w = std::max(3, tapered_opts_.window_length);
+                    const int half = w / 2;
+                    for (int s = 0; s < effective_steps; ++s) {
+                        int a = std::max(0, s - half);
+                        int b = std::min(effective_steps - 1, s + half);
+                        double sum = 0.0; int cnt = 0;
+                        for (int i = a; i <= b; ++i) { sum += k_raw[i]; ++cnt; }
+                        k_smooth[s] = (cnt > 0) ? (sum / cnt) : k_raw[s];
+                    }
+                } else {
+                    // default: SG quadratic with window 5
+                    if (effective_steps >= 5) {
+                        // copy edges as-is for simplicity
+                        k_smooth[0] = k_raw[0];
+                        k_smooth[1] = k_raw[1];
+                        for (int s = 2; s <= effective_steps - 3; ++s) {
+                            k_smooth[s] = sg5[0] * k_raw[s - 2] + sg5[1] * k_raw[s - 1] + sg5[2] * k_raw[s] + sg5[3] * k_raw[s + 1] + sg5[4] * k_raw[s + 2];
+                        }
+                        k_smooth[effective_steps - 2] = k_raw[effective_steps - 2];
+                        k_smooth[effective_steps - 1] = k_raw[effective_steps - 1];
+                    } else {
+                        k_smooth = k_raw; // too short to smooth
+                    }
+                }
 
-                    // iterate over rows
-                    for (int row = 0; row < numRows; row++) {
-                        force_radiation_damping_[row] +=
-                            GetRIRFval(row, col, step) * vel[dof] * rirf_width_vector[step];
+                // Simple taper control: start and end percentages
+                int tc_index = static_cast<int>(std::floor(tapered_opts_.taper_start_percent * static_cast<double>(effective_steps)));
+                int tc_end = static_cast<int>(std::floor(tapered_opts_.taper_end_percent * static_cast<double>(effective_steps)));
+                tc_index = std::max(0, std::min(tc_index, effective_steps));
+                tc_end = std::max(tc_index, std::min(tc_end, effective_steps));
+
+                // Apply half-cosine taper from start to end percentage
+                int taper_len = tc_end - tc_index;
+                int effective_len = tc_end;
+
+                const double pi_const = 3.14159265358979323846;
+                for (int s = 0; s < effective_steps; ++s) {
+                    double val = k_smooth[s];
+                    if (s < tc_index) {
+                        // keep original value
+                    } else if (s < tc_end && taper_len > 0) {
+                        double t = (static_cast<double>(s - tc_index)) / static_cast<double>(taper_len);
+                        // Half-cosine taper: goes from 1.0 to taper_final_amplitude
+                        // taper_final_amplitude = 0.0 means complete zero, 1.0 means no change
+                        double w = tapered_opts_.taper_final_amplitude + (1.0 - tapered_opts_.taper_final_amplitude) * 0.5 * (1.0 + std::cos(pi_const * t));
+                        val *= w;
+                    } else {
+                        val = 0.0;
+                    }
+                    processed(row_dof, col, s) = val;
+                }
+                
+                // Zero out any remaining steps beyond effective_steps
+                for (int s = effective_steps; s < steps; ++s) {
+                    processed(row_dof, col, s) = 0.0;
+                }
+
+                if (tc_index > max_tc_index) max_tc_index = tc_index;
+                if (taper_len > max_taper_len) max_taper_len = taper_len;
+                if (effective_len > max_effective_len) max_effective_len = effective_len;
+            }
+        }
+
+        rirf_processed_[b] = std::move(processed);
+
+        LOG_DEBUG("TaperedDirect kernel (body " << b
+                  << ") Start: " << tapered_opts_.taper_start_percent
+                  << ", End: " << tapered_opts_.taper_end_percent
+                  << ", Final Amp: " << tapered_opts_.taper_final_amplitude
+                  << ", RIRF End Time: " << (tapered_opts_.rirf_end_time > 0.0 ? std::to_string(tapered_opts_.rirf_end_time) + "s" : "full")
+                  << ", Max Tc index: " << max_tc_index
+                  << ", Max taper length: " << max_taper_len
+                  << ", Max effective length: " << max_effective_len
+                  << "/" << steps);
+
+        if (tapered_opts_.export_plot_csv) {
+            // Write small CSV summaries for inspection: times, representative channel before/after
+            try {
+                const std::string base = std::string("rirf_body") + std::to_string(b) + std::string("_summary.csv");
+                std::filesystem::path out_dir = diagnostics_output_dir_.empty() ? std::filesystem::current_path() : std::filesystem::path(diagnostics_output_dir_);
+                std::filesystem::path out_path = out_dir / base;
+                std::ofstream ofs(out_path.string());
+                ofs << "step,time,k_before,k_after\n";
+                // pick row=0,col=0 as representative
+                for (int s = 0; s < effective_steps; ++s) {
+                    double t = (s < rirf_time_vector.size()) ? rirf_time_vector[s] : static_cast<double>(s);
+                    double before = file_info_.GetRIRFVal(b, 0, 0, s);
+                    double after = rirf_processed_[b](0, 0, s);
+                    ofs << s << "," << t << "," << before << "," << after << "\n";
+                }
+                // Only log the directory once (body 0)
+                if (b == 0) {
+                    LOG_INFO("RIRF CSVs written in " << out_dir.string());
+                }
+            } catch (...) {
+                // ignore export errors
+            }
+        }
+    }
+
+    rirf_processed_ready_ = true;
+}
+
+std::vector<double> TestHydro::ComputeForceRadiationDampingConv() {
+    auto __t0 = std::chrono::steady_clock::now();
+    const int rirf_steps = file_info_.GetRIRFDims(2);
+    const int total_dofs = kDofPerBody * num_bodies_;
+
+    assert(total_dofs > 0 && rirf_steps > 0);
+
+    // If using TaperedDirect, ensure processed kernel is ready before any parallel region
+    if (convolution_mode_ == RadiationConvolutionMode::TaperedDirect) {
+        EnsureProcessedRIRF();
+    }
+
+    // Current time and minimum history time window required
+    const double simulation_time = bodies_[0]->GetChTime();
+    const int rirf_last_index = static_cast<int>(rirf_time_vector.size()) - 1;
+    const double history_min_time = simulation_time - (rirf_last_index >= 0 ? rirf_time_vector[rirf_last_index] : 0.0);
+
+    // Prevent duplicate computation within same step
+    if (!time_history_.empty() && simulation_time == time_history_.front()) {
+        throw std::runtime_error("Tried to compute the radiation damping convolution twice within the same time step!");
+    }
+
+    // Record current time at the front (most recent first)
+    time_history_.insert(time_history_.begin(), simulation_time);
+
+    // Record current velocities per body at the front (matching time_history_ ordering)
+    for (int b = 0; b < num_bodies_; ++b) {
+        auto& body = bodies_[b];
+        auto& velocity_history_body = velocity_history_[b];
+
+        const auto linear_velocity_world  = body->GetPosDt();
+        const auto angular_velocity_world = body->GetAngVelParent();
+        std::vector<double> velocity_dof_vector = {
+            linear_velocity_world[0], linear_velocity_world[1], linear_velocity_world[2],
+            angular_velocity_world[0], angular_velocity_world[1], angular_velocity_world[2]
+        };
+        velocity_history_body.insert(velocity_history_body.begin(), std::move(velocity_dof_vector));
+    }
+
+    // Prune history older than the max RIRF time span
+    PruneHistory(time_history_, velocity_history_, num_bodies_, history_min_time);
+
+    // Nothing to convolve with if we don't yet have at least 2 time points
+    if (time_history_.size() <= 1) {
+        profile_stats_.radiation_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+        profile_stats_.radiation_calls++;
+        return force_radiation_damping_;
+    }
+
+    // Walk through RIRF steps and accumulate convolution
+    size_t history_index = 0;  // index into descending time_history_ (front is most recent)
+
+#ifdef _OPENMP
+    const int num_threads = omp_get_max_threads();
+    std::vector<std::vector<double>> thread_locals(num_threads, std::vector<double>(total_dofs, 0.0));
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& local_out = thread_locals[tid];
+
+        size_t history_index_local = history_index;
+        #pragma omp for schedule(static)
+        for (int step = 0; step < rirf_steps; ++step) {
+            const double rirf_query_time = simulation_time - rirf_time_vector[step];
+
+            size_t time_index = history_index_local;
+            if (!AdvanceToBracket(time_history_, time_index, rirf_query_time)) {
+                continue;  // not enough older history to interpolate
+            }
+            history_index_local = time_index;
+
+            const double newer_time = time_history_[history_index_local];
+            const double older_time = time_history_[history_index_local + 1];
+
+            for (int body_index = 0; body_index < num_bodies_; ++body_index) {
+                const auto& velocity_history_body = velocity_history_[body_index];
+                if (velocity_history_body.size() <= history_index_local) {
+                    continue;  // inconsistent; should not happen in normal flow
+                }
+
+                double interpolated_velocity_dof[kDofPerBody];
+                InterpolateVelocity6D(velocity_history_body, history_index_local, rirf_query_time,
+                                      older_time, newer_time, interpolated_velocity_dof);
+
+                const double step_width = rirf_width_vector[step];
+                if (step_width == 0.0) {
+                    continue;
+                }
+                const int body_col_offset = body_index * kDofPerBody;
+                for (int dof = 0; dof < kDofPerBody; ++dof) {
+                    const int col = body_col_offset + dof;
+                    const double contribution_scale = interpolated_velocity_dof[dof] * step_width;
+                    if (contribution_scale == 0.0) {
+                        continue;
+                    }
+                    for (int row = 0; row < total_dofs; ++row) {
+                        local_out[row] += GetRIRFval(row, col, step) * contribution_scale;
                     }
                 }
             }
         }
     }
+
+    // Deterministic combine of thread-local accumulators
+    for (int t = 0; t < num_threads; ++t) {
+        const auto& local = thread_locals[t];
+        for (int row = 0; row < total_dofs; ++row) {
+            force_radiation_damping_[row] += local[row];
+        }
+    }
+#else
+    double* force_radiation_out = force_radiation_damping_.data();
+    for (int step = 0; step < rirf_steps; ++step) {
+        const double rirf_query_time = simulation_time - rirf_time_vector[step];
+
+        size_t time_index = history_index;
+        if (!AdvanceToBracket(time_history_, time_index, rirf_query_time)) {
+            break;  // not enough older history to interpolate
+        }
+        history_index = time_index;
+
+        const double newer_time = time_history_[history_index];
+        const double older_time = time_history_[history_index + 1];
+
+        for (int body_index = 0; body_index < num_bodies_; ++body_index) {
+            const auto& velocity_history_body = velocity_history_[body_index];
+            if (velocity_history_body.size() <= history_index) {
+                continue;  // skip if inconsistent; should not happen in normal flow
+            }
+
+            double interpolated_velocity_dof[kDofPerBody];
+            InterpolateVelocity6D(velocity_history_body, history_index, rirf_query_time,
+                                  older_time, newer_time, interpolated_velocity_dof);
+
+            const double step_width = rirf_width_vector[step];
+            const int body_col_offset = body_index * kDofPerBody;
+            for (int dof = 0; dof < kDofPerBody; ++dof) {
+                const int col = body_col_offset + dof;
+                const double contribution_scale = interpolated_velocity_dof[dof] * step_width;
+                if (contribution_scale == 0.0) {
+                    continue;
+                }
+                for (int row = 0; row < total_dofs; ++row) {
+                    force_radiation_out[row] += GetRIRFval(row, col, step) * contribution_scale;
+                }
+            }
+        }
+    }
+#endif
+
+    profile_stats_.radiation_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.radiation_calls++;
     return force_radiation_damping_;
 }
 
@@ -403,10 +697,18 @@ double TestHydro::GetRIRFval(int row, int col, int st) {
     int col_dof    = col % kDofPerBody;
     int row_dof    = row % kDofPerBody;
 
+    if (convolution_mode_ == RadiationConvolutionMode::TaperedDirect) {
+        EnsureProcessedRIRF();
+        // processed tensor is scaled by rho already
+        const auto& tensor = rirf_processed_[body_index];
+        return tensor(row_dof, col, st);
+    }
+
     return file_info_.GetRIRFVal(body_index, row_dof, col, st);
 }
 
 Eigen::VectorXd TestHydro::ComputeForceWaves() {
+    auto __t0 = std::chrono::steady_clock::now();
     // Ensure bodies_ is not empty
     if (bodies_.empty()) {
         throw std::runtime_error("bodies_ array is empty in ComputeForceWaves");
@@ -414,12 +716,8 @@ Eigen::VectorXd TestHydro::ComputeForceWaves() {
 
     force_waves_ = user_waves_->GetForceAtTime(bodies_[0]->GetChTime());
 
-    // TODO: Add size check for force_waves_ if needed
-    // Example:
-    // if (force_waves_.size() != expected_size) {
-    //     throw std::runtime_error("Mismatched size in ComputeForceWaves");
-    // }
-
+    profile_stats_.waves_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - __t0).count();
+    profile_stats_.waves_calls++;
     return force_waves_;
 }
 

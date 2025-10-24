@@ -1,6 +1,6 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 1. Prerequisites & Policies ───────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 1. Prerequisites & Policies -----------------------------------------------
+# ===============================================================================
 
 # cmake_minimum_required(3.18.2): need CMP0091 policy + target properties support
 cmake_minimum_required(VERSION 3.18.2)
@@ -15,9 +15,9 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
     message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there. You may need to remove CMakeCache.txt.")
 endif()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 2. Project Definition & Defaults ─────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 2. Project Definition & Defaults -----------------------------------------
+# ===============================================================================
 
 project(HydroChrono 
 	VERSION 0.3.1
@@ -25,9 +25,9 @@ project(HydroChrono
 	LANGUAGES CXX
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 2.1. Parse Project Metadata ──────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 2.1. Parse Project Metadata ----------------------------------------------
+# ===============================================================================
 
 # Read and parse project.meta file if present; otherwise provide sensible defaults
 if(EXISTS "${CMAKE_SOURCE_DIR}/project.meta")
@@ -106,9 +106,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 3. User Options ───────────────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 3. User Options -----------------------------------------------------------
+# ===============================================================================
 
 option(HYDROCHRONO_ENABLE_TESTS "Enable tests" ON)
 option(HYDROCHRONO_ENABLE_IRRLICHT "Enable irrlicht visualization library" OFF)
@@ -118,119 +118,7 @@ option(HYDROCHRONO_ENABLE_USER_DOC "User's documentation" OFF)
 option(HYDROCHRONO_ENABLE_PROG_DOC "Programmer's documentation" OFF)
 option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 4. Find Dependencies ─────────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# ── Chrono Integration ──
-# Important! To ensure ABI compatibility, use the same C++ standard
-# as the one used to build the Chrono libraries.
-set(CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD ${CHRONO_CXX_STANDARD})
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-
-# Add Chrono's cmake path so its custom FindIrrlicht module is discoverable
-if(DEFINED Chrono_DIR)
-	list(APPEND CMAKE_MODULE_PATH "${Chrono_DIR}")
-endif()
-
-# Optionally allow the user to set Irrlicht_ROOT externally (e.g., via build.ps1)
-set(Irrlicht_ROOT "${Irrlicht_ROOT}" CACHE PATH "Path to Irrlicht installation")
-
-# Find Irrlicht (MUST happen before Chrono to define Irrlicht::Irrlicht target)
-if(HYDROCHRONO_ENABLE_IRRLICHT)
-	find_package(Irrlicht REQUIRED MODULE)
-	message(STATUS "Found Irrlicht include dir: ${IRRLICHT_INCLUDE_DIR}")
-endif()
-
-# Now we can find Chrono (which assumes Irrlicht::Irrlicht already exists)
-find_package(Chrono
-             CONFIG REQUIRED
-             COMPONENTS Parsers
-             OPTIONAL_COMPONENTS Irrlicht)
-message(STATUS "Chrono core targets: ${Chrono_LIBRARIES}")
-
-if(EXISTS "${Chrono_DIR}/ChronoTargets.cmake")
-    include("${Chrono_DIR}/ChronoTargets.cmake")
-    message(STATUS "Manually included ChronoTargets.cmake from ${Chrono_DIR}")
-endif()
-
-
-# Verify required Chrono targets are available
-if(NOT TARGET Chrono::Chrono_core)
-	message(FATAL_ERROR "Chrono::Chrono_core target not found. Ensure Chrono was built with modern CMake target exports.")
-endif()
-# Find OpenMP first to ensure OpenMP::OpenMP_CXX is available
-find_package(OpenMP REQUIRED)
-
-if(OpenMP_CXX_FOUND)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-endif()
-
-# Then include Chrono
-
-# Enable Irrlicht support if requested and available
-if(HYDROCHRONO_ENABLE_IRRLICHT)
-	if(TARGET Chrono::Chrono_irrlicht)
-		add_compile_definitions("HYDROCHRONO_HAVE_IRRLICHT=1")
-	else()
-		message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
-	endif()
-endif()
-
-# Ensure we have a compatible Chrono version (check after find_package)
-if(DEFINED CHRONO_VERSION)
-	if(CHRONO_VERSION VERSION_LESS "9.0.1")
-		message(WARNING "HydroChrono now requires Chrono ≥ 9.0.1 for modular target support. Found version: ${CHRONO_VERSION}")
-	endif()
-else()
-	# If CHRONO_VERSION is not defined, assume it's a compatible version
-	# since the modern targets are available
-	message(STATUS "Chrono version not explicitly set, but modern targets are available - assuming compatible version")
-endif()
-
-# ── HDF5 Integration ──
-# Prefer config package at provided root; avoid environment/registry
-
-find_package(HDF5 REQUIRED COMPONENTS CXX)
-
-# ---- Eigen: support both CONFIG and module modes ----
-find_package(Eigen3 QUIET CONFIG)
-if (NOT Eigen3_FOUND)
-  find_package(Eigen3 REQUIRED)  # module mode -> EIGEN3_INCLUDE_DIR
-endif()
-
-# ---- Chrono include path: prefer imported target; fall back to vars; fall back to build tree ----
-set(HC_CHRONO_INCLUDE_DIRS "")
-
-# Prefer INTERFACE includes from an imported target, if provided
-if (TARGET Chrono::Chrono_core)
-  get_target_property(HC_CHRONO_INCLUDE_DIRS Chrono::Chrono_core INTERFACE_INCLUDE_DIRECTORIES)
-endif()
-
-# Fallback to legacy variable if the package sets it
-if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED CHRONO_INCLUDE_DIRS)
-  set(HC_CHRONO_INCLUDE_DIRS ${CHRONO_INCLUDE_DIRS})
-endif()
-
-# Derive from Chrono_DIR when using Chrono from a build tree (headers live under <chrono_root>/src)
-if (NOT HC_CHRONO_INCLUDE_DIRS AND DEFINED Chrono_DIR)
-  get_filename_component(_CHR_CMAKE_DIR "${Chrono_DIR}" ABSOLUTE)     # .../chrono/build/cmake
-  get_filename_component(_CHR_BUILD_DIR "${_CHR_CMAKE_DIR}" DIRECTORY)# .../chrono/build
-  get_filename_component(_CHR_ROOT      "${_CHR_BUILD_DIR}" DIRECTORY)# .../chrono
-  set(_CHR_INC_CAND "${_CHR_ROOT}/src")
-  if (EXISTS "${_CHR_INC_CAND}/chrono/core/ChMatrix.h")
-    set(HC_CHRONO_INCLUDE_DIRS "${_CHR_INC_CAND}")
-  endif()
-endif()
-
-
-#-----------------------------------------------------------------------------
 # Fix for VS 2017 15.8 and newer to handle alignment specification with Eigen
-#-----------------------------------------------------------------------------
-
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 	if(MSVC AND ${MSVC_VERSION} GREATER_EQUAL 1915)
 		add_compile_definitions("ENABLE_EXTENDED_ALIGNED_STORAGE")
@@ -248,7 +136,7 @@ if(MSVC)
 	add_compile_options(/wd4251)     # Disable "class needs to have dll-interface" warnings
 endif()
 
-# ── Output Directory Structure ──
+# -- Output Directory Structure --
 # Centralize all binaries for easier deployment and testing
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -274,14 +162,83 @@ endif()
 set(HYDROCHRONO_DEMO_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/demos CACHE PATH "Output directory for demo executables")
 set(HYDROCHRONO_TEST_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests CACHE PATH "Output directory for test executables")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 5. Core Library Target ───────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 4. Find Dependencies -----------------------------------------------------
+# ===============================================================================
+
+# -- Chrono package --
+
+message(STATUS "\n---- Find Chrono")
+
+if(NOT Chrono_DIR)
+    message("Specify the directory containing a CMake configuration file for Chrono")
+    set(Chrono_DIR "" CACHE PATH "The directory containing a CMake configuration file for Chrono.")
+    return()
+endif()
+
+find_package(Chrono
+             CONFIG REQUIRED
+             COMPONENTS Parsers
+             OPTIONAL_COMPONENTS Irrlicht)
+
+message(STATUS "----\n")
+
+message(STATUS "Chrono targets: ${CHRONO_TARGETS}")
+
+# Verify required Chrono targets are available
+if(NOT TARGET Chrono::Chrono_core)
+	message(FATAL_ERROR "Chrono::Chrono_core target not found. Ensure Chrono was built with modern CMake target exports.")
+endif()
+if(NOT TARGET Chrono::Chrono_parsers)
+	message(FATAL_ERROR "Chrono::Chrono_parsers target not found. Ensure Chrono was built with modern CMake target exports.")
+endif()
+
+# Ensure we have a compatible Chrono version (check after find_package)
+if(DEFINED CHRONO_VERSION)
+	if(CHRONO_VERSION VERSION_LESS "9.0.1")
+		message(WARNING "HydroChrono now requires Chrono ≥ 9.0.1 for modular target support. Found version: ${CHRONO_VERSION}")
+	endif()
+else()
+	# If CHRONO_VERSION is not defined, assume it's a compatible version
+	# since the modern targets are available
+	message(STATUS "Chrono version not explicitly set, but modern targets are available - assuming compatible version")
+endif()
+
+# To ensure ABI compatibility, use the same C++ standard as the one used to build Chrono
+if (CHRONO_CXX_STANDARD)
+  set(HC_CXX_STANDARD ${CHRONO_CXX_STANDARD})
+  message(STATUS "Set C++ standard same as Chrono: ${HC_CXX_STANDARD}")
+else()
+  set(HC_CXX_STANDARD cxx_std_17)
+  message(STATUS "Set C++ standard to: ${HC_CXX_STANDARD}")
+endif()
+
+# Enable Irrlicht support if requested and available
+if(HYDROCHRONO_ENABLE_IRRLICHT)
+	if(TARGET Chrono::Chrono_irrlicht)
+		add_compile_definitions("HYDROCHRONO_HAVE_IRRLICHT=1")
+	else()
+		message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
+	endif()
+endif()
+
+# If on a Windows platform, copy the Chrono DLLs to the binary directory
+add_CHRONO_DLLS_copy_command()
+
+# -- OpenMP support --
+find_package(OpenMP REQUIRED COMPONENTS CXX)
+
+# -- HDF5 Integration --
+find_package(HDF5 REQUIRED COMPONENTS CXX)
+
+# ===============================================================================
+# --- 5. Core Library Target ---------------------------------------------------
+# ===============================================================================
 
 # Helper function to configure common HydroChrono target properties
 # Now uses modern Chrono imported targets (Chrono ≥ v9.1.0)
 function(configure_hydro_target tgt)
-	target_compile_features(${tgt} PUBLIC cxx_std_17)
+	target_compile_features(${tgt} PUBLIC ${HC_CXX_STANDARD})
 	
 	target_include_directories(${tgt}
 		PUBLIC
@@ -335,7 +292,7 @@ function(configure_test_environment)
 	endif()
 endfunction()
 
-# ── Main HydroChrono Library ──
+# -- Main HydroChrono Library --
 set(HYDROCHRONO_SOURCES
 	src/h5fileinfo.cpp
 	src/chloadaddedmass.cpp
@@ -356,82 +313,38 @@ set(HYDROCHRONO_SOURCES
 add_library(HydroChrono ${HYDROCHRONO_SOURCES})
 configure_hydro_target(HydroChrono)
 
-# Add HDF5 as private dependency via imported targets (headers/flags propagate)
-set(HC_HDF5_TARGETS)
-if(TARGET HDF5::HDF5_CXX)
-  list(APPEND HC_HDF5_TARGETS HDF5::HDF5_CXX)
-endif()
-if(TARGET HDF5::HDF5)
-  list(APPEND HC_HDF5_TARGETS HDF5::HDF5)
-endif()
-if(TARGET hdf5::hdf5_cpp)
-  list(APPEND HC_HDF5_TARGETS hdf5::hdf5_cpp)
-endif()
-if(TARGET hdf5::hdf5)
-  list(APPEND HC_HDF5_TARGETS hdf5::hdf5)
-endif()
-if(TARGET hdf5::hdf5_cpp-shared)
-  list(APPEND HC_HDF5_TARGETS hdf5::hdf5_cpp-shared)
-endif()
-if(TARGET hdf5::hdf5-shared)
-  list(APPEND HC_HDF5_TARGETS hdf5::hdf5-shared)
-endif()
-if(HC_HDF5_TARGETS)
-  # PUBLIC so static library link dependencies propagate to executables
-  target_link_libraries(HydroChrono PUBLIC ${HC_HDF5_TARGETS})
+# Add OpenMP
+target_link_libraries(HydroChrono PUBLIC OpenMP::OpenMP_CXX)
+
+# Add HDF5 (assume first latest HDF5 version 1.14.6)
+if(TARGET hdf5-static)
+  message(STATUS "Linking static libraries hdf5-static")
+  target_link_libraries(HydroChrono PUBLIC hdf5-static)
+  target_link_libraries(HydroChrono PUBLIC hdf5_cpp-static)
+  target_link_libraries(HydroChrono PUBLIC hdf5_hl-static)
+  target_link_libraries(HydroChrono PUBLIC hdf5_hl_cpp-static)
+  target_link_libraries(HydroChrono PUBLIC hdf5_tools-static)
+elseif(TARGET hdf5-shared)
+  message(STATUS "Linking shared libraries hdf5-shared")
+  target_link_libraries(HydroChrono PUBLIC hdf5-shared)
+  target_link_libraries(HydroChrono PUBLIC hdf5_cpp-shared)
+  target_link_libraries(HydroChrono PUBLIC hdf5_hl-shared)
+  target_link_libraries(HydroChrono PUBLIC hdf5_hl_cpp-shared)
+  target_link_libraries(HydroChrono PUBLIC hdf5_tools-shared)
+elseif(TARGET HDF5::HDF5)
+  message(STATUS "Linking HDF5::HDF5")
+  target_link_libraries(HydroChrono PUBLIC HDF5::HDF5)
 else()
-  # Module-mode fallback variables (older FindHDF5)
-  if(DEFINED HDF5_CXX_LIBRARIES OR DEFINED HDF5_LIBRARIES)
-    target_link_libraries(HydroChrono PUBLIC ${HDF5_CXX_LIBRARIES} ${HDF5_LIBRARIES})
-  endif()
+  message(STATUS "No HDF5 target found")
+  target_compile_definitions(HydroChrono PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${HDF5_COMPILE_DEFS}>)
+  target_include_directories(HydroChrono PUBLIC ${HDF5_INCLUDE_DIRS})
+  target_link_libraries(HydroChrono PUBLIC ${HDF5_CXX_LIBRARIES})
 endif()
-
-# Fallback: some HDF5 packages set HDF5_INCLUDE_DIRS instead of INTERFACE includes
-if(DEFINED HDF5_INCLUDE_DIRS)
-  target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIRS})
-elseif(DEFINED HDF5_INCLUDE_DIR)
-  target_include_directories(HydroChrono PRIVATE ${HDF5_INCLUDE_DIR})
-elseif(DEFINED HDF5_CXX_INCLUDE_DIR)
-  target_include_directories(HydroChrono PRIVATE ${HDF5_CXX_INCLUDE_DIR})
-else()
-  # Try to derive includes from imported target if available
-  if(TARGET HDF5::HDF5_CXX)
-    get_target_property(_H5_INCS HDF5::HDF5_CXX INTERFACE_INCLUDE_DIRECTORIES)
-    if(_H5_INCS)
-      target_include_directories(HydroChrono PRIVATE ${_H5_INCS})
-    endif()
-  elseif(TARGET hdf5::hdf5_cpp)
-    get_target_property(_H5_INCS hdf5::hdf5_cpp INTERFACE_INCLUDE_DIRECTORIES)
-    if(_H5_INCS)
-      target_include_directories(HydroChrono PRIVATE ${_H5_INCS})
-    endif()
-  endif()
-  # Last-resort fallback: include from HDF5_ROOT/include if it contains H5Cpp.h
-  if(NOT _H5_INCS AND DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/include/H5Cpp.h")
-    target_include_directories(HydroChrono PRIVATE "${HDF5_ROOT}/include")
-  endif()
-endif()
-target_compile_features(HydroChrono PUBLIC cxx_std_17)
-
-# target_include_directories(
-	# HydroChrono
-
-	# PUBLIC
-	# $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-	# $<INSTALL_INTERFACE:include>
-	# ${CHRONO_INCLUDE_DIRS}
-
-	# PRIVATE
-	# ${CMAKE_CURRENT_SOURCE_DIR}/
-	# ${CMAKE_CURRENT_SOURCE_DIR}/include
-	# ${HDF5_INCLUDE_DIRS}
-# )
 
 target_include_directories(HydroChrono
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-    ${HC_CHRONO_INCLUDE_DIRS}     # <— ensures chrono/ headers are visible
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -447,11 +360,11 @@ target_compile_definitions(HydroChrono
 		$<$<BOOL:${HYDROCHRONO_ENABLE_LOGGING}>:"HYDROCHRONO_ENABLE_LOGGING=1">
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 6. Auxiliary Targets (GUI, Tests, Demos) ─────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 6. Auxiliary Targets (GUI, Tests, Demos) ---------------------------------
+# ===============================================================================
 
-# ── Main YAML-Driven CLI App ──
+# -- Main YAML-Driven CLI App --
 message(STATUS "HYDROCHRONO_ENABLE_YAML_RUNNER: ${HYDROCHRONO_ENABLE_YAML_RUNNER}")
 if(HYDROCHRONO_ENABLE_YAML_RUNNER)
     add_executable(run_hydrochrono
@@ -460,6 +373,9 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
         src/utils/misc_options.cpp
         src/utils/setup_parser.cpp
     )
+	
+	# Set C++ standard
+	target_compile_features(run_hydrochrono PUBLIC ${HC_CXX_STANDARD})
 
     target_link_libraries(run_hydrochrono
         PRIVATE HydroChrono HydroChronoGUI Chrono::Chrono_parsers
@@ -489,26 +405,15 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
 else()
     message(STATUS "YAML runner disabled - not creating run_hydrochrono target")
 endif()
-target_link_libraries(HydroChrono
-  PUBLIC
-    $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
-)
-
-# If Eigen is module-mode (no imported target), include its dir
-if (NOT TARGET Eigen3::Eigen AND DEFINED EIGEN3_INCLUDE_DIR)
-  target_include_directories(HydroChrono PUBLIC ${EIGEN3_INCLUDE_DIR})
-endif()
 
 # ====================
 # Irrlicht GUI helper
 # ====================
 
-# ── GUI Helper Library ──
 # Separate library for Irrlicht visualization helpers
 add_library(HydroChronoGUI src/gui/guihelper.cpp)
 configure_hydro_target(HydroChronoGUI)
 
-# ── Demo Executables ──
 target_sources(
 	HydroChronoGUI
 
@@ -516,45 +421,24 @@ target_sources(
 	src/gui/guihelper.cpp
 )
 
-target_compile_features(HydroChronoGUI PUBLIC cxx_std_17)
-
-
 target_include_directories(HydroChronoGUI
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-    ${HC_CHRONO_INCLUDE_DIRS}
 )
-
-target_compile_options(HydroChronoGUI BEFORE
-	PUBLIC
-		${CHRONO_CXX_FLAGS}
-)
-
-target_link_options(HydroChronoGUI BEFORE
-	PUBLIC
-		${CHRONO_LINKER_FLAGS}
-)
-
-target_link_libraries(HydroChronoGUI
-  PUBLIC
-    $<$<TARGET_EXISTS:Eigen3::Eigen>:Eigen3::Eigen>
-)
-
-if (NOT TARGET Eigen3::Eigen AND DEFINED EIGEN3_INCLUDE_DIR)
-  target_include_directories(HydroChronoGUI PUBLIC ${EIGEN3_INCLUDE_DIR})
-endif()
-
-
 
 # ====================
 # DEMOS
 # ====================
+
 if(HYDROCHRONO_ENABLE_DEMOS)
     add_subdirectory(demos)
 endif()
 
-# ── Test Suite ──
+# ===================
+# TESTS
+# ===================
+
 if(HYDROCHRONO_ENABLE_TESTS)
 	# Use environment variable to override default data directory
 	if(DEFINED ENV{HYDROCHRONO_DATA_DIR})
@@ -573,9 +457,9 @@ if(HYDROCHRONO_ENABLE_TESTS)
 	add_subdirectory(tests/regression)
 endif()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ─── 7. Installation ───────────────────────────────────────────────────────────
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# --- 7. Installation -----------------------------------------------------------
+# ===============================================================================
 
 include(GNUInstallDirs)
 option(HC_INSTALL_DEV_KIT "Install CMake dev package (headers/libs)" OFF)
@@ -631,9 +515,9 @@ else()
 endif()
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # 7.1 Runtime installer and ZIP packaging for releases
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 # Flat install tree for public distribution
 option(HC_INSTALL_DEV_DEMOS "Install developer demo executables" OFF)
@@ -758,15 +642,12 @@ if(HC_INSTALL_DEV_DEMOS)
 			FILES_MATCHING PATTERN "demo_*.exe")
 endif()
 
-
 # MSVC runtime DLLs and ZIP packaging via CPack
  include(InstallRequiredSystemLibraries)
  set(CPACK_GENERATOR "ZIP")
  set(CPACK_PACKAGE_NAME "HydroChrono")
  set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
  include(CPack)
-
-
 
 # Optionally include Python runtime DLL if Chrono::Parsers depends on it
 find_package(Python3 QUIET COMPONENTS Interpreter)

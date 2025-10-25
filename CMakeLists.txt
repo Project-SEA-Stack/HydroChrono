@@ -80,10 +80,7 @@ message(STATUS "Status: ${HYDROCHRONO_STATUS}")
 
 # Generate version.h header from template
 configure_file(${CMAKE_SOURCE_DIR}/cmake/version.h.in
-               ${CMAKE_BINARY_DIR}/generated/hydroc/version.h @ONLY)
-
-# Add generated include directory
-include_directories(${CMAKE_BINARY_DIR}/generated)
+               ${CMAKE_BINARY_DIR}/hydroc/version.h @ONLY)
 
 # Add the cmake folder so the FindSphinx module is found
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
@@ -240,12 +237,8 @@ else()
 endif()
 
 # Enable Irrlicht support if requested and available
-if(HYDROCHRONO_ENABLE_IRRLICHT)
-	if(TARGET Chrono::Chrono_irrlicht)
-		add_compile_definitions("HYDROCHRONO_HAVE_IRRLICHT=1")
-	else()
-		message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
-	endif()
+if(HYDROCHRONO_ENABLE_IRRLICHT AND NOT TARGET Chrono::Chrono_irrlicht)
+  message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
 endif()
 
 # If on a Windows platform, copy the Chrono DLLs to the binary directory
@@ -258,6 +251,36 @@ find_package(OpenMP REQUIRED COMPONENTS CXX)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 # ===============================================================================
+# ----- Create HydroChrono configuration header ---------------------------------
+# ===============================================================================
+
+message(STATUS "Generate HydroChrono configuration headers")
+
+set(CH_DATA_DIR "#define CHRONO_DATA_DIR \"${CHRONO_DATA_DIR}\"")
+
+if(HYDROCHRONO_ENABLE_IRRLICHT)
+  set(HC_HAS_IRRLICHT "#define HYDROCHRONO_HAVE_IRRLICHT")
+else()
+  set(HC_HAS_IRRLICHT "#undef HYDROCHRONO_HAVE_IRRLICHT")
+endif()
+
+# For BUILD tree
+set(HC_DATA_DIR "#define HC_DATA_DIR \"${HC_BUILD_DATA}\"")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
+               ${PROJECT_BINARY_DIR}/hydroc/config.h
+               @ONLY)
+
+# For INSTALL tree
+set(HC_DATA_DIR "#define HC_DATA_DIR \"${CMAKE_INSTALL_PREFIX}/${HC_INSTALL_DATA}\"")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
+               ${PROJECT_BINARY_DIR}/hydroc/config.h-install
+               @ONLY)
+
+install(FILES ${PROJECT_BINARY_DIR}/hydroc/config-install.h
+        RENAME "config.h"
+        DESTINATION include/chrono)
+
+# ===============================================================================
 # ------- Core Library Target ---------------------------------------------------
 # ===============================================================================
 
@@ -266,10 +289,12 @@ find_package(HDF5 REQUIRED COMPONENTS CXX)
 function(configure_hydro_target tgt)
 	target_compile_features(${tgt} PUBLIC ${HC_CXX_STANDARD})
 	
+	list(APPEND HC_INCLUDES_BUILD ${PROJECT_SOURCE_DIR}/include)
+	list(APPEND HC_INCLUDES_BUILD ${PROJECT_BINARY_DIR})
 	target_include_directories(${tgt}
 		PUBLIC
-			$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-			$<INSTALL_INTERFACE:include>
+			"$<BUILD_INTERFACE:${HC_INCLUDES_BUILD}>"
+			"$<INSTALL_INTERFACE:include>"
 	)
 	
 	# Enable position-independent code for static library linking
@@ -335,8 +360,18 @@ set(HYDROCHRONO_SOURCES
     src/simulation_exporter.cpp
 )
 
+set(HYDROCHRONO_HEADERS
+    ${PROJECT_BINARY_DIR}/hydroc/config.h
+    ${PROJECT_BINARY_DIR}/hydroc/version.h
+    include/hydroc/h5_writer.h
+    include/hydroc/h5fileinfo.h
+    include/hydroc/helper.h
+    include/hydroc/hydro_forces.h
+    include/hydroc/logging.h
+)
+
 # Create the library target and configure it
-add_library(HydroChrono ${HYDROCHRONO_SOURCES})
+add_library(HydroChrono ${HYDROCHRONO_SOURCES} ${HYDROCHRONO_HEADERS})
 configure_hydro_target(HydroChrono)
 
 # Add OpenMP
@@ -368,9 +403,6 @@ else()
 endif()
 
 target_include_directories(HydroChrono
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -379,7 +411,6 @@ target_include_directories(HydroChrono
 # Library-specific compile definitions
 target_compile_definitions(HydroChrono
 	PUBLIC
-		"CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\""
 		"HYDROCHRONO_VERSION=\"${PROJECT_VERSION}\""
 		"HYDROCHRONO_BUILD_TYPE=\"$<IF:$<CONFIG:Debug>,Debug,$<IF:$<CONFIG:Release>,Release,$<IF:$<CONFIG:RelWithDebInfo>,RelWithDebInfo,$<IF:$<CONFIG:MinSizeRel>,MinSizeRel,Unknown>>>>\""
 	PRIVATE 
@@ -445,12 +476,6 @@ target_sources(
 
 	PUBLIC
 	src/gui/guihelper.cpp
-)
-
-target_include_directories(HydroChronoGUI
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
 )
 
 # ====================

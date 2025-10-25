@@ -1,0 +1,21 @@
+#ifndef HYDROC_CONFIG_H
+#define HYDROC_CONFIG_H
+
+/**
+ * @file config.h
+ * @brief HydroChrono configuration header file.
+ *
+ * This header file is automatically created during the CMake configuration
+ * of HydroChrono and is tailored for a BUILD or INSTALL tree.
+ */
+
+// If HydroChrono was built with Irrlicht support, define HYDROCHRONO_HAVE_IRRLICHT
+@HC_HAS_IRRLICHT@
+
+// Path to HydroChrono data directory
+@HC_DATA_DIR@
+
+// Path to Chrono data directory
+@CH_DATA_DIR@
+
+#endif

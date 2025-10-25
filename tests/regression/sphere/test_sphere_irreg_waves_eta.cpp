@@ -25,7 +25,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
     try {
-        SetChronoDataPath(CHRONO_DATA_DIR);
         std::cout << "DEBUG: Chrono data path set successfully" << std::endl;
 
         if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
@@ -45,12 +44,12 @@ int main(int argc, char* argv[]) {
         std::cout << "DEBUG: Data directory: " << DATADIR << std::endl;
 
         auto body1_meshfame =
-            (DATADIR / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
-        auto h5fname = (DATADIR / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
+            (DATADIR / "demos" / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
+        auto h5fname = (DATADIR / "demos" / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
         
         // Try multiple possible paths for the ETA file
         std::vector<std::filesystem::path> possible_eta_paths = {
-            DATADIR / "sphere" / "eta" / "eta.txt",
+            DATADIR / "demos" / "sphere" / "eta" / "eta.txt",
             std::filesystem::path("C:/code/HydroChrono/build/tests/regression/Release/data/sphere/eta/eta.txt"),
             std::filesystem::path("C:/code/HydroChrono/demos/sphere/eta/eta.txt")
         };
@@ -179,7 +178,7 @@ int main(int argc, char* argv[]) {
         wave_inputs.simulation_dt_       = timestep;
         wave_inputs.simulation_duration_ = simulationDuration;
         wave_inputs.ramp_duration_       = 0.0;  // Changed from 60.0
-        wave_inputs.eta_file_path_       = (DATADIR / "sphere" / "eta" / "eta.txt").lexically_normal().generic_string();  // Added ETA file
+        wave_inputs.eta_file_path_       = (DATADIR / "demos" / "sphere" / "eta" / "eta.txt").lexically_normal().generic_string();  // Added ETA file
         wave_inputs.frequency_min_       = 0.001;
         wave_inputs.frequency_max_       = 1.0;
         wave_inputs.nfrequencies_        = 1000;

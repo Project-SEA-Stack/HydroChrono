@@ -19,8 +19,6 @@ using namespace chrono;
 int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
@@ -34,9 +32,9 @@ int main(int argc, char* argv[]) {
     // Get model file names - use regression test data directory
     std::filesystem::path DATADIR = std::filesystem::current_path();
 
-    auto body1_meshfame = (DATADIR / "geometry" / "float_cog.obj").lexically_normal().generic_string();
-    auto body2_meshfame = (DATADIR / "geometry" / "plate_cog.obj").lexically_normal().generic_string();
-    auto h5fname        = (DATADIR / "hydroData" / "rm3.h5").lexically_normal().generic_string();
+    auto body1_meshfame = (DATADIR / "demos" / "geometry" / "float_cog.obj").lexically_normal().generic_string();
+    auto body2_meshfame = (DATADIR / "demos" / "geometry" / "plate_cog.obj").lexically_normal().generic_string();
+    auto h5fname        = (DATADIR / "demos" / "hydroData" / "rm3.h5").lexically_normal().generic_string();
 
     // system/solver settings
     ChSystemNSC system;

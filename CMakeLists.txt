@@ -471,13 +471,6 @@ endif()
 add_library(HydroChronoGUI src/gui/guihelper.cpp)
 configure_hydro_target(HydroChronoGUI)
 
-target_sources(
-	HydroChronoGUI
-
-	PUBLIC
-	src/gui/guihelper.cpp
-)
-
 # ====================
 # DEMOS
 # ====================

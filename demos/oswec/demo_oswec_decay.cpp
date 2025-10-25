@@ -61,8 +61,6 @@ std::array<double, 3> add_vectors(std::array<double, 3> v1, std::array<double, 3
 int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
@@ -76,9 +74,9 @@ int main(int argc, char* argv[]) {
     // Get model file names
     std::filesystem::path DATADIR(hydroc::getDataDir());
 
-    auto body1_meshfame = (DATADIR / "oswec" / "geometry" / "flap.obj").lexically_normal().generic_string();
-    auto body2_meshfame = (DATADIR / "oswec" / "geometry" / "base.obj").lexically_normal().generic_string();
-    auto h5fname        = (DATADIR / "oswec" / "hydroData" / "oswec.h5").lexically_normal().generic_string();
+    auto body1_meshfame = (DATADIR / "demos" / "oswec" / "geometry" / "flap.obj").lexically_normal().generic_string();
+    auto body2_meshfame = (DATADIR / "demos" / "oswec" / "geometry" / "base.obj").lexically_normal().generic_string();
+    auto h5fname        = (DATADIR / "demos" / "oswec" / "hydroData" / "oswec.h5").lexically_normal().generic_string();
 
     // system/solver settings
     ChSystemNSC system;

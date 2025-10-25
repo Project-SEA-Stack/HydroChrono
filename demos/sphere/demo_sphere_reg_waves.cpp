@@ -18,8 +18,6 @@ using namespace chrono;
 // environment variable to give the data_directory.
 //
 int main(int argc, char* argv[]) {
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     std::vector<double> task10_wave_amps_0005 = {0.044, 0.078, 0.095, 0.123, 0.177, 0.24, 0.314, 0.397, 0.491, 0.594};
     std::vector<double> task10_wave_amps_002  = {0.177, 0.314, 0.380, 0.491, 0.706, 0.961, 1.256, 1.589, 1.962, 2.374};
     std::vector<double> task10_wave_amps      = task10_wave_amps_002;
@@ -49,8 +47,8 @@ int main(int argc, char* argv[]) {
         std::filesystem::path DATADIR(hydroc::getDataDir());
 
         auto body1_meshfname =
-            (DATADIR / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
-        auto h5fname = (DATADIR / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
+            (DATADIR / "demos" / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
+        auto h5fname = (DATADIR / "demos" / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
 
         // system/solver settings
         ChSystemNSC system;

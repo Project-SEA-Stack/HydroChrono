@@ -61,8 +61,6 @@ std::array<double, 3> add_vectors(std::array<double, 3> v1, std::array<double, 3
 
 int main(int argc, char* argv[]) {
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     std::vector<double> periods = {4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 18.5, 19.0, 19.25, 19.5, 20.0, 21.0, 22.0, 24.0};
     int reg_wave_num_max        = periods.size();
 
@@ -82,9 +80,9 @@ int main(int argc, char* argv[]) {
         // Get model file names
         std::filesystem::path DATADIR(hydroc::getDataDir());
 
-        auto body1_meshfname = (DATADIR / "oswec" / "geometry" / "flap.obj").lexically_normal().generic_string();
-        auto body2_meshfname = (DATADIR / "oswec" / "geometry" / "base.obj").lexically_normal().generic_string();
-        auto h5fname        = (DATADIR / "oswec" / "hydroData" / "oswec.h5").lexically_normal().generic_string();
+        auto body1_meshfname = (DATADIR / "demos" / "oswec" / "geometry" / "flap.obj").lexically_normal().generic_string();
+        auto body2_meshfname = (DATADIR / "demos" / "oswec" / "geometry" / "base.obj").lexically_normal().generic_string();
+        auto h5fname        = (DATADIR / "demos" / "oswec" / "hydroData" / "oswec.h5").lexically_normal().generic_string();
 
         // system/solver settings
         ChSystemNSC system;

@@ -20,8 +20,6 @@ using namespace chrono;
 int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     // Initialize logging with command line arguments
     // Optional: initialize logging if desired based on args
 
@@ -46,9 +44,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Using data directory from environment: " << DATADIR << std::endl;
     }
 
-    auto body1_meshfame = (DATADIR / "rm3" / "geometry" / "float_cog.obj").lexically_normal().generic_string();
-    auto body2_meshfame = (DATADIR / "rm3" / "geometry" / "plate_cog.obj").lexically_normal().generic_string();
-    auto h5fname        = (DATADIR / "rm3" / "hydroData" / "rm3.h5").lexically_normal().generic_string();
+    auto body1_meshfame = (DATADIR / "demos" / "rm3" / "geometry" / "float_cog.obj").lexically_normal().generic_string();
+    auto body2_meshfame = (DATADIR / "demos" / "rm3" / "geometry" / "plate_cog.obj").lexically_normal().generic_string();
+    auto h5fname        = (DATADIR / "demos" / "rm3" / "hydroData" / "rm3.h5").lexically_normal().generic_string();
 
     std::cout << "Looking for mesh files in:" << std::endl;
     std::cout << "  body1: " << body1_meshfame << std::endl;

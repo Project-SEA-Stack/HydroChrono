@@ -20,8 +20,6 @@ int main(int argc, char* argv[]) {
     // auto start = std::chrono::high_resolution_clock::now();
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
@@ -34,8 +32,8 @@ int main(int argc, char* argv[]) {
 
     std::filesystem::path DATADIR(hydroc::getDataDir());
 
-    auto body1_meshfame = (DATADIR / "DeepCWind" / "geometry" / "deepcwind.obj").lexically_normal().generic_string();
-    auto h5fname        = (DATADIR / "DeepCWind" / "hydroData" / "deepcwind.h5").lexically_normal().generic_string();
+    auto body1_meshfame = (DATADIR / "demos" / "DeepCWind" / "geometry" / "deepcwind.obj").lexically_normal().generic_string();
+    auto h5fname        = (DATADIR / "demos" / "DeepCWind" / "hydroData" / "deepcwind.h5").lexically_normal().generic_string();
 
     // system/solver settings
     ChSystemSMC system;

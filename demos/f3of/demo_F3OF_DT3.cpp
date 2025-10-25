@@ -20,8 +20,6 @@ using namespace chrono;
 int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
@@ -35,10 +33,10 @@ int main(int argc, char* argv[]) {
     // Get model file names
     std::filesystem::path DATADIR(hydroc::getDataDir());
 
-    auto body1_meshfame = (DATADIR / "f3of" / "geometry" / "base.obj").lexically_normal().generic_string();
-    auto body2_meshfame = (DATADIR / "f3of" / "geometry" / "flap.obj").lexically_normal().generic_string();
-    auto body3_meshfame = (DATADIR / "f3of" / "geometry" / "flap.obj").lexically_normal().generic_string();
-    auto h5fname        = (DATADIR / "f3of" / "hydroData" / "f3of.h5").lexically_normal().generic_string();
+    auto body1_meshfame = (DATADIR / "demos" / "f3of" / "geometry" / "base.obj").lexically_normal().generic_string();
+    auto body2_meshfame = (DATADIR / "demos" / "f3of" / "geometry" / "flap.obj").lexically_normal().generic_string();
+    auto body3_meshfame = (DATADIR / "demos" / "f3of" / "geometry" / "flap.obj").lexically_normal().generic_string();
+    auto h5fname        = (DATADIR / "demos" / "f3of" / "hydroData" / "f3of.h5").lexically_normal().generic_string();
 
     // system/solver settings
     ChSystemSMC system;

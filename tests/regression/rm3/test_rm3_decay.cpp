@@ -156,46 +156,35 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+    std::filesystem::path results_dir(RESULTS_DIR_NAME);
+    hydroc::ensure_directory_exists(results_dir);
+
     if (profilingOn) {
-        std::ofstream profilingFile;
-        profilingFile.open("./results/CHRONO_RM3_DECAY_DURATION.txt");
-        if (!profilingFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directory("./results");
-                profilingFile.open("./results/CHRONO_RM3_DECAY_DURATION.txt");
-                if (!profilingFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
+        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
+        if (profilingFile.is_open()) {
+            profilingFile << duration << " ms\n";
+            profilingFile.close();
+        } else {
+            std::cout << "Error: Could not open profiling file for writing." << std::endl;
         }
-        profilingFile << duration << "\n";
-        profilingFile.close();
     }
 
     if (saveDataOn) {
-        // Create results directory if it doesn't exist
-        if (!std::filesystem::exists("./results")) {
-            std::cout << "Creating results directory..." << std::endl;
-            std::filesystem::create_directory("./results");
+        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
+        if (outputFile.is_open()) {
+            outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(16) << "Float Heave (m)"
+                       << std::right << std::setw(16) << "Plate Heave (m)" << std::endl;
+            for (int i = 0; i < time_vector.size(); ++i)
+                outputFile << std::left << std::setw(10) << std::setprecision(2) << std::fixed << time_vector[i]
+                           << std::right << std::setw(16) << std::setprecision(8) << std::fixed
+                           << float_heave_position[i] << std::right << std::setw(16) << std::setprecision(8)
+                           << std::fixed << plate_heave_position[i] << std::endl;
+            outputFile.close();
+        } else {
+            std::cout << "Error: Could not open output file for writing." << std::endl;
+            return 1;  // Return an error code
         }
-        
-        std::ofstream outputFile;
-        outputFile.open("./results/CHRONO_RM3_DECAY.txt");
-        if (!outputFile.is_open()) {
-            std::cout << "Failed to open output file for writing" << std::endl;
-            return 1;
-        }
-        outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(16) << "Float Heave (m)"
-                   << std::right << std::setw(16) << "Plate Heave (m)" << std::endl;
-        for (int i = 0; i < time_vector.size(); ++i)
-            outputFile << std::left << std::setw(10) << std::setprecision(2) << std::fixed << time_vector[i]
-                       << std::right << std::setw(16) << std::setprecision(8) << std::fixed << float_heave_position[i]
-                       << std::right << std::setw(16) << std::setprecision(8) << std::fixed << plate_heave_position[i]
-                       << std::endl;
-        outputFile.close();
     }
+
     return 0;
 }

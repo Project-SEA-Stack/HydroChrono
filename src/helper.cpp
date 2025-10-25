@@ -4,7 +4,6 @@
 #include <chrono/core/ChDataPath.h>
 
 #include <cstdlib>
-#include <filesystem>  // C++17
 #include <memory>
 #include <vector>
 
@@ -51,4 +50,11 @@ int hydroc::SetInitialEnvironment(int argc, char* argv[]) noexcept {
 
 std::string hydroc::getDataDir() noexcept {
     return DATADIR.lexically_normal().generic_string();
+}
+
+void hydroc::ensure_directory_exists(const std::filesystem::path& path) {
+    if (!std::filesystem::exists(path)) {
+        std::cout << "Path " << std::filesystem::absolute(path) << " does not exist, creating it now..." << std::endl;
+        std::filesystem::create_directory(path);
+    }
 }

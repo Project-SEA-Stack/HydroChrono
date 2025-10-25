@@ -182,50 +182,39 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+        std::filesystem::path results_dir(RESULTS_DIR_NAME);
+    hydroc::ensure_directory_exists(results_dir);
+
     if (profilingOn) {
-        std::string out_file = "results/CHRONO_SPHERE_IRREGULAR_WAVES_DURATION.txt";
-        std::ofstream profilingFile(out_file);
-        if (!profilingFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directories("./results");
-                profilingFile.open(out_file);
-                if (!profilingFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
+        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
+        if (profilingFile.is_open()) {
+            profilingFile << duration << " ms\n";
+            profilingFile.close();
+        } else {
+            std::cout << "Error: Could not open profiling file for writing." << std::endl;
         }
-        profilingFile << duration << "\n";
-        profilingFile.close();
     }
 
     if (saveDataOn) {
-        std::string out_file = "results/CHRONO_SPHERE_IRREGULAR_WAVES.txt";
-        std::ofstream outputFile(out_file);
-        if (!outputFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directories("./results");
-                outputFile.open(out_file);
-                if (!outputFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
-        }
-        outputFile.precision(10);
-        outputFile.width(12);
-        outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12) << "Heave (m)" << "\n";
-        outputFile << std::left << std::setw(10) << "----------" << std::right << std::setw(12) << "----------" << "\n";
+        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
+        if (outputFile.is_open()) {
+            outputFile.precision(10);
+            outputFile.width(12);
+            outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12) << "Heave (m)"
+                       << "\n";
+            outputFile << std::left << std::setw(10) << "----------" << std::right << std::setw(12) << "----------"
+                       << "\n";
 
-        for (int i = 0; i < time_vector.size(); i++) {
-            outputFile << std::left << std::setw(10) << std::fixed << std::setprecision(3) << time_vector[i]
-                       << std::right << std::setw(12) << std::fixed << std::setprecision(6) << heave_position[i] << "\n";
+            for (int i = 0; i < time_vector.size(); i++) {
+                outputFile << std::left << std::setw(10) << std::fixed << std::setprecision(3) << time_vector[i]
+                           << std::right << std::setw(12) << std::fixed << std::setprecision(6) << heave_position[i]
+                           << "\n";
+            }
+            outputFile.close();
+        } else {
+            std::cout << "Error: Could not open output file for writing." << std::endl;
+            return 1;  // Return an error code
         }
-        outputFile.close();
     }
 
     return 0;

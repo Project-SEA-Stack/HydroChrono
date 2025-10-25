@@ -8,6 +8,7 @@
 #include <iostream>
 #include <hydroc/logging.h>
 #include <string>
+#include <filesystem>  // C++17
 
 #ifndef M_PI
     #define M_PI 3.14159265358979323846
@@ -28,8 +29,7 @@ namespace hydroc {
 
 /**@brief Set initial environment
  *
- * Use command line argument or env variables to set s
- * ome static data at initialization.
+ * Use command line argument or env variables to set some static data at initialization.
  *
  * Set the main data directory ..
  *
@@ -44,6 +44,12 @@ int SetInitialEnvironment(int argc, char* argv[]) noexcept;
  * @return the string containing the path in standard format
  */
 std::string getDataDir() noexcept;
+
+/**@brief C++ 17 filesystem helper to ensure a directory exists
+ *
+ */
+void ensure_directory_exists(const std::filesystem::path& path);
+
 template <typename T>
 void WriteDataToFile(const std::vector<T>& data, const std::string& filename) {
     std::ofstream outFile(filename);

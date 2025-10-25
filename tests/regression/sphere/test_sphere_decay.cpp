@@ -5,20 +5,11 @@
 #include <chrono/core/ChRealtimeStep.h>
 
 #include <chrono>      // std::chrono::high_resolution_clock::now
-#include <filesystem>  // c++17 only
 #include <iomanip>     // std::setprecision
 #include <vector>      // std::vector<double>
 
 // Use the namespaces of Chrono
 using namespace chrono;
-
-// C++17 filesystem helper to ensure a directory exists
-void ensure_directory_exists(const std::filesystem::path& path) {
-    if (!std::filesystem::exists(path)) {
-        std::cout << "Path " << std::filesystem::absolute(path) << " does not exist, creating it now..." << std::endl;
-        std::filesystem::create_directory(path);
-    }
-}
 
 // usage: ./sphere_deca.exe [DATADIR] [--nogui]
 //
@@ -130,11 +121,12 @@ int main(int argc, char* argv[]) {
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
     // Create results directory if it doesn't exist
-    std::filesystem::path results_dir("./results");
-    ensure_directory_exists(results_dir);
+    //std::filesystem::path results_dir("./" + std::string(RESULTS_DIR));
+    std::filesystem::path results_dir(RESULTS_DIR_NAME);
+    hydroc::ensure_directory_exists(results_dir);
 
     if (profilingOn) {
-        std::ofstream profilingFile(results_dir / "CHRONO_SPHERE_DECAY_HEAVE_DURATION.txt");
+        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
         if (profilingFile.is_open()) {
             profilingFile << duration << " ms\n";
             profilingFile.close();
@@ -144,7 +136,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (saveDataOn) {
-        std::ofstream outputFile(results_dir / "CHRONO_SPHERE_DECAY_HEAVE.txt");
+        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
         if (outputFile.is_open()) {
             outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12)
                        << "Heave (m)"

@@ -152,65 +152,56 @@ int main(int argc, char* argv[]) {
         auto end          = std::chrono::high_resolution_clock::now();
         unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+        std::filesystem::path results_dir(RESULTS_DIR_NAME);
+        hydroc::ensure_directory_exists(results_dir);
+
         if (profilingOn) {
-            std::string out_file = "./results/CHRONO_SPHERE_REG_WAVES_" + std::to_string(reg_wave_num) + "_DURATION.txt";
-            std::ofstream outputFile(out_file);
-            // profilingFile.open("./results/sphere_reg_waves_duration.txt");
-            if (!outputFile.is_open()) {
-                if (!std::filesystem::exists("./results")) {
-                    std::cout << "Path " << std::filesystem::absolute("./results")
-                              << " does not exist, creating it now..." << std::endl;
-                    std::filesystem::create_directories("./results");
-                    outputFile.open(out_file);
-                    if (!outputFile.is_open()) {
-                        std::cout << "Still cannot open file, ending program" << std::endl;
-                        return 0;
-                    }
-                }
+            std::string out_file =
+                results_dir.string() + "/" + RESULTS_FILE_NAME + "_DURATION_" + std::to_string(reg_wave_num) + ".txt";
+            std::ofstream profilingFile(out_file);
+            if (profilingFile.is_open()) {
+                profilingFile << duration << " ms\n";
+                profilingFile.close();
+            } else {
+                std::cout << "Error: Could not open profiling file for writing." << std::endl;
             }
-            outputFile << duration << "\n";
-            outputFile.close();
         }
 
         if (saveDataOn) {
-            std::string out_file = "./results/CHRONO_SPHERE_REG_WAVES_" + std::to_string(reg_wave_num) + ".txt";
+            std::string out_file =
+                results_dir.string() + "/" + RESULTS_FILE_NAME + "_" + std::to_string(reg_wave_num) + ".txt";
             std::ofstream outputFile(out_file);
-            if (!outputFile.is_open()) {
-                if (!std::filesystem::exists("./results")) {
-                    std::cout << "Path " << std::filesystem::absolute("./results")
-                              << " does not exist, creating it now..." << std::endl;
-                    std::filesystem::create_directories("./results");
-                    outputFile.open(out_file);
-                    if (!outputFile.is_open()) {
-                        std::cout << "Still cannot open file, ending program" << std::endl;
-                        return 0;
-                    }
-                }
-            }
-            outputFile.precision(10);
-            outputFile.width(12);
-            outputFile << "Wave #: \t" << reg_wave_num << "\n";
-            outputFile << "Wave amplitude (m): \t" << my_hydro_inputs->regular_wave_amplitude_ << "\n";
-            outputFile << "Wave omega (rad/s): \t" << my_hydro_inputs->regular_wave_omega_ << "\n";
-            outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12)
-                       << "Heave (m)"
-                       //<< std::right << std::setw(18) << "Heave Vel (m/s)"
-                       //<< std::right << std::setw(18) << "Heave Force (N)"
-                       << "\n";
-            outputFile << std::left << std::setw(10) << "----------" << std::right << std::setw(12)
-                       << "----------"
-                       //<< std::right << std::setw(18) << "----------"
-                       //<< std::right << std::setw(18) << "----------"
-                       << "\n";
-
-            for (int i = 0; i < time_vector.size(); i++) {
-                outputFile << std::left << std::setw(10) << std::fixed << std::setprecision(3) << time_vector[i]
-                           << std::right << std::setw(12) << std::fixed << std::setprecision(6) << heave_position[i]
-                           //<< std::right << std::setw(18) << std::fixed << std::setprecision(6) << heave_velocity[i]
-                           //<< std::right << std::setw(18) << std::fixed << std::setprecision(6) << heave_force[i]
+            if (outputFile.is_open()) {
+                outputFile.precision(10);
+                outputFile.width(12);
+                outputFile << "Wave #: \t" << reg_wave_num << "\n";
+                outputFile << "Wave amplitude (m): \t" << my_hydro_inputs->regular_wave_amplitude_ << "\n";
+                outputFile << "Wave omega (rad/s): \t" << my_hydro_inputs->regular_wave_omega_ << "\n";
+                outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12)
+                           << "Heave (m)"
+                           //<< std::right << std::setw(18) << "Heave Vel (m/s)"
+                           //<< std::right << std::setw(18) << "Heave Force (N)"
                            << "\n";
+                outputFile << std::left << std::setw(10) << "----------" << std::right << std::setw(12)
+                           << "----------"
+                           //<< std::right << std::setw(18) << "----------"
+                           //<< std::right << std::setw(18) << "----------"
+                           << "\n";
+
+                for (int i = 0; i < time_vector.size(); i++) {
+                    outputFile
+                        << std::left << std::setw(10) << std::fixed << std::setprecision(3) << time_vector[i]
+                        << std::right << std::setw(12) << std::fixed << std::setprecision(6)
+                        << heave_position[i]
+                        //<< std::right << std::setw(18) << std::fixed << std::setprecision(6) << heave_velocity[i]
+                        //<< std::right << std::setw(18) << std::fixed << std::setprecision(6) << heave_force[i]
+                        << "\n";
+                }
+                outputFile.close();
+            } else {
+                std::cout << "Error: Could not open output file for writing." << std::endl;
+                return 1;  // Return an error code
             }
-            outputFile.close();
         }
 
         // Clear vectors for next iteration

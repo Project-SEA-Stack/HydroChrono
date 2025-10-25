@@ -119,6 +119,8 @@ option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
 # --- 4. Build setup ------------------------------------------------------------
 # ===============================================================================
 
+message(STATUS "")
+
 # Fix for VS 2017 15.8 and newer to handle alignment specification with Eigen
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 	if(MSVC AND ${MSVC_VERSION} GREATER_EQUAL 1915)
@@ -137,7 +139,34 @@ if(MSVC)
 	add_compile_options(/wd4251)     # Disable "class needs to have dll-interface" warnings
 endif()
 
+# -- HydroChrono data directory
+
+message(STATUS "HydroChrono data directory")
+
+# Destination directory for HydroChrono data in BUILD tree
+set(HC_BUILD_DATA "${CMAKE_BINARY_DIR}/data")
+
+# Destination directory for HydroChrono data in INSTALL tree
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    set(HC_INSTALL_DATA "data")
+    set(HC_INSTALL_DEMO "bin")
+    set(HC_INSTALL_PYTHON "bin")
+else()
+    set(HC_INSTALL_DATA "share/chrono/data")
+    set(HC_INSTALL_DEMO "share/chrono/bin")
+    set(HC_INSTALL_PYTHON "share/chrono/python")
+endif()
+
+# Copy data directory to BUILD tree
+file(COPY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_BUILD_DATA})
+message(STATUS "  copied to: ${HC_BUILD_DATA}/")
+
+# Install data directory
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_INSTALL_DATA})
+message(STATUS "  installed to: ${CMAKE_INSTALL_PREFIX}/${HC_INSTALL_DATA}/")
+
 # -- Output Directory Structure --
+
 # Centralize all binaries for easier deployment and testing
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -160,30 +189,14 @@ elseif(CMAKE_BUILD_TYPE)
 endif()
 
 # Category-specific output folders for organization
+message(STATUS "HydroChrono output directories")
 set(HYDROCHRONO_DEMO_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/demos CACHE PATH "Output directory for demo executables")
 set(HYDROCHRONO_TEST_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests CACHE PATH "Output directory for test executables")
 
-# Destination directory for HydroChrono data in BUILD tree
-set(HC_BUILD_DATA "${CMAKE_BINARY_DIR}/data")
-
-# Destination directory for HydroChrono data in INSTALL tree
-if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-    set(HC_INSTALL_DATA "data")
-    set(HC_INSTALL_DEMO "bin")
-    set(HC_INSTALL_PYTHON "bin")
-else()
-    set(HC_INSTALL_DATA "share/chrono/data")
-    set(HC_INSTALL_DEMO "share/chrono/bin")
-    set(HC_INSTALL_PYTHON "share/chrono/python")
-endif()
-
-# Copy data directory to BUILD tree
-file(COPY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_BUILD_DATA})
-message(STATUS "  Data directory copied to: ${HC_BUILD_DATA}/")
-
-# Install data directory
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_INSTALL_DATA})
-message(STATUS "  Data directory installed to: ${CMAKE_INSTALL_PREFIX}/${HC_INSTALL_DATA}/")
+message(STATUS "  demo output: ${HYDROCHRONO_DEMO_OUTPUT_DIR}")
+message(STATUS "  test output: ${HYDROCHRONO_TEST_OUTPUT_DIR}")
+file(MAKE_DIRECTORY "${HYDROCHRONO_DEMO_OUTPUT_DIR}")
+file(MAKE_DIRECTORY "${HYDROCHRONO_TEST_OUTPUT_DIR}")
 
 # ===============================================================================
 # ------- Find Dependencies -----------------------------------------------------

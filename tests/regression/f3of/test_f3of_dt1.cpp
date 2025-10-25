@@ -171,47 +171,35 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+    std::filesystem::path results_dir(RESULTS_DIR_NAME);
+    hydroc::ensure_directory_exists(results_dir);
+
     if (profilingOn) {
-        std::ofstream profilingFile;
-        profilingFile.open("./results/" + filename_duration);
-        if (!profilingFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directories("./results");
-                profilingFile.open("./results/" + filename_duration);
-                if (!profilingFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
+        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
+        if (profilingFile.is_open()) {
+            profilingFile << duration << " ms\n";
+            profilingFile.close();
+        } else {
+            std::cout << "Error: Could not open profiling file for writing." << std::endl;
         }
-        profilingFile << duration << std::endl;
-        profilingFile.close();
     }
 
     if (saveDataOn) {
-        std::ofstream outputFile;
-        outputFile.open("./results/" + filename);
-        if (!outputFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directories("./results");
-                outputFile.open("./results/" + filename);
-                if (!outputFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
+        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
+        if (outputFile.is_open()) {
+            outputFile
+                << "Time (s)    Base Surge (m)Base Pitch (radians)Flap Fore Pitch (radians)Flap Aft Pitch (radians)"
+                << std::endl;
+            for (int i = 0; i < time_vector.size(); i++) {
+                outputFile << std::fixed << std::setprecision(4) << time_vector[i] << "                "
+                           << base_surge[i] << "         " << base_pitch[i] << "         " << fore_pitch[i]
+                           << "          " << aft_pitch[i] << std::endl;
             }
+            outputFile.close();
+        } else {
+            std::cout << "Error: Could not open output file for writing." << std::endl;
+            return 1;  // Return an error code
         }
-        outputFile << "Time (s)    Base Surge (m)Base Pitch (radians)Flap Fore Pitch (radians)Flap Aft Pitch (radians)" << std::endl;
-        for (int i = 0; i < time_vector.size(); i++) {
-            outputFile << std::fixed << std::setprecision(4) << time_vector[i] << "                " << base_surge[i]
-                       << "         " << base_pitch[i] << "         " << fore_pitch[i] << "          " << aft_pitch[i]
-                       << std::endl;
-        }
-        outputFile.close();
     }
 
     std::cout << "Simulation completed in " << duration << " milliseconds." << std::endl;

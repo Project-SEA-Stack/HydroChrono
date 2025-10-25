@@ -1,9 +1,6 @@
-# TODO
-#  - properly set WORKING_DIRECTORY (different is using multi-config or single-config generators)
-
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-function(build_regression_test TEST_GROUP TEST_NAME TEST_REF_FILE)
+function(build_regression_test TEST_GROUP TEST_NAME MULTIPLE)
 
    message(STATUS "...${TEST_NAME}")
    
@@ -12,11 +9,28 @@ function(build_regression_test TEST_GROUP TEST_NAME TEST_REF_FILE)
    set(TEST_REF ${TEST_NAME}_regression)
    set(COMPARE_SCRIPT ${CMAKE_SOURCE_DIR}/tests/regression/${TEST_GROUP}/compare_${TEST_NAME}.py)
    set(FIXTURE_FILE ${TEST_NAME}_regression_file)
-   set(FILE_RST ${CMAKE_BINARY_DIR}/bin/test_results/${TEST_GROUP}/results_${TEST_NAME}.txt)
-   set(FILE_REF ${CMAKE_SOURCE_DIR}/data/reference_data/${TEST_GROUP}/${TEST_REF_FILE})
-   
+   if(MULTIPLE)
+     set(FILE_REF ${CMAKE_SOURCE_DIR}/data/reference_data/${TEST_GROUP}/hc_ref_${TEST_NAME}_1.txt)
+     set(FILE_RST ${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP}/results_${TEST_NAME}_1.txt)
+   else()
+     set(FILE_REF ${CMAKE_SOURCE_DIR}/data/reference_data/${TEST_GROUP}/hc_ref_${TEST_NAME}.txt)
+     set(FILE_RST ${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP}/results_${TEST_NAME}.txt)
+   endif()
+
+   file(MAKE_DIRECTORY ${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP})
+
    add_executable(${TEST_EXE} ${TEST_SRC})
    source_group("" FILES ${TEST_SRC})
+      
+   target_compile_definitions(${TEST_EXE} 
+	   PRIVATE
+       "RESULTS_DIR_NAME=\"${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP}\""
+       "RESULTS_FILE_NAME=\"results_${TEST_NAME}\""
+   )
+
+   if(MSVC)
+       set_target_properties(${TEST_EXE} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${TEST_EXE}>")
+   endif()
 
    target_link_libraries(${TEST_EXE} PRIVATE HydroChrono HydroChronoGUI)
 
@@ -56,17 +70,17 @@ endfunction()
 
 message(STATUS "Add HydroChrono regression tests")
 
-build_regression_test(sphere   sphere_decay               hc_ref_sphere_decay.txt)
-build_regression_test(sphere   sphere_reg_waves           hc_ref_sphere_reg_waves_1.txt)
-build_regression_test(sphere   sphere_irreg_waves         hc_ref_sphere_irreg_waves.txt)
-build_regression_test(sphere   sphere_irreg_waves_eta     hc_ref_sphere_irreg_waves_eta.txt)
-build_regression_test(f3of     f3of_dt1                   hc_ref_f3of_dt1_surge.txt)
-build_regression_test(f3of     f3of_dt2                   hc_ref_f3of_dt2_pitch.txt)
-build_regression_test(f3of     f3of_dt3                   hc_ref_f3of_dt3_flap_pitch.txt)
-build_regression_test(oswec    oswec_decay                hc_ref_oswec_decay.txt)
-build_regression_test(oswec    oswec_reg_waves            hc_ref_oswec_reg_waves_1.txt)
-build_regression_test(rm3      rm3_decay                  hc_ref_rm3_decay.txt)
-build_regression_test(rm3      rm3_reg_waves              hc_ref_rm3_reg_waves.txt)
+build_regression_test(sphere  sphere_decay            FALSE)
+build_regression_test(sphere  sphere_reg_waves        TRUE)
+build_regression_test(sphere  sphere_irreg_waves      FALSE)
+build_regression_test(sphere  sphere_irreg_waves_eta  FALSE)
+build_regression_test(f3of    f3of_dt1                FALSE)
+build_regression_test(f3of    f3of_dt2                FALSE)
+build_regression_test(f3of    f3of_dt3                FALSE)
+build_regression_test(oswec   oswec_decay             FALSE)
+build_regression_test(oswec   oswec_reg_waves         TRUE)
+build_regression_test(rm3     rm3_decay               FALSE)
+build_regression_test(rm3     rm3_reg_waves           FALSE)
 
 # Regression Test Report Generation
 # =================================

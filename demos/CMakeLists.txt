@@ -22,6 +22,10 @@ foreach(DEMO ${DEMOS})
    
    add_executable(${PROGRAM} ${DEMO}.cpp)
    source_group("" FILES ${DEMO}.cpp)
+   
+   if(MSVC)
+     set_target_properties(${PROGRAM} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${PROGRAM}>")
+   endif()
 
    target_link_libraries(${PROGRAM} PRIVATE HydroChronoGUI HydroChrono)
 

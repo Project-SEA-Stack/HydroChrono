@@ -195,53 +195,38 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+    std::filesystem::path results_dir(RESULTS_DIR_NAME);
+    hydroc::ensure_directory_exists(results_dir);
+
     if (profilingOn) {
-        std::ofstream profilingFile;
-        std::string filename = "CHRONO_F3OF_DT3_FLAP_PITCH.txt";
-        std::string filename_duration = "CHRONO_F3OF_DT3_FLAP_PITCH_DURATION.txt";
-        profilingFile.open("./results/" + filename_duration);
-        if (!profilingFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..." << std::endl;
-                std::filesystem::create_directory("./results");
-                profilingFile.open("./results/" + filename_duration);
-                if (!profilingFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
+        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
+        if (profilingFile.is_open()) {
+            profilingFile << duration << " ms\n";
+            profilingFile.close();
+        } else {
+            std::cout << "Error: Could not open profiling file for writing." << std::endl;
         }
-        profilingFile << duration << " ms\n";
-        profilingFile.close();
     }
+
     if (saveDataOn) {
-        std::ofstream outputFile;
-        std::string filename = "CHRONO_F3OF_DT3_FLAP_PITCH.txt";
-        std::string filename_duration = "CHRONO_F3OF_DT3_FLAP_PITCH_DURATION.txt";
-        outputFile.open("./results/CHRONO_F3OF_DT3_FLAP_PITCH.txt");
-        if (!outputFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..." << std::endl;
-                std::filesystem::create_directory("./results");
-                outputFile.open("./results/CHRONO_F3OF_DT3_FLAP_PITCH.txt");
-                if (!outputFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
-        }
-        outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(16) << "Base Surge (m)"
-                   << std::right << std::setw(16) << "Base Pitch (radians)" << std::right << std::setw(16)
-                   << "Flap Fore Pitch (radians)" << std::right << std::setw(16) << "Flap Aft Pitch (radians)"
-                   << std::endl;
-        for (int i = 0; i < time_vector.size(); ++i)
-            outputFile << std::left << std::setw(10) << std::setprecision(2) << std::fixed << time_vector[i]
-                       << std::right << std::setw(16) << std::setprecision(4) << std::fixed << base_surge[i]
-                       << std::right << std::setw(16) << std::setprecision(4) << std::fixed << base_pitch[i]
-                       << std::right << std::setw(16) << std::setprecision(4) << std::fixed << fore_pitch[i]
-                       << std::right << std::setw(16) << std::setprecision(4) << std::fixed << aft_pitch[i]
+        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
+        if (outputFile.is_open()) {
+            outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(16) << "Base Surge (m)"
+                       << std::right << std::setw(16) << "Base Pitch (radians)" << std::right << std::setw(16)
+                       << "Flap Fore Pitch (radians)" << std::right << std::setw(16) << "Flap Aft Pitch (radians)"
                        << std::endl;
-        outputFile.close();
+            for (int i = 0; i < time_vector.size(); ++i)
+                outputFile << std::left << std::setw(10) << std::setprecision(2) << std::fixed << time_vector[i]
+                           << std::right << std::setw(16) << std::setprecision(4) << std::fixed << base_surge[i]
+                           << std::right << std::setw(16) << std::setprecision(4) << std::fixed << base_pitch[i]
+                           << std::right << std::setw(16) << std::setprecision(4) << std::fixed << fore_pitch[i]
+                           << std::right << std::setw(16) << std::setprecision(4) << std::fixed << aft_pitch[i]
+                           << std::endl;
+            outputFile.close();
+        } else {
+            std::cout << "Error: Could not open output file for writing." << std::endl;
+            return 1;  // Return an error code
+        }
     }
 
     std::cout << "Simulation finished." << std::endl;

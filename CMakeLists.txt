@@ -1,5 +1,5 @@
 # ===============================================================================
-# --- 1. Prerequisites & Policies -----------------------------------------------
+# ------ Prerequisites & Policies -----------------------------------------------
 # ===============================================================================
 
 # cmake_minimum_required(3.18.2): need CMP0091 policy + target properties support
@@ -16,7 +16,7 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 endif()
 
 # ===============================================================================
-# --- 2. Project Definition & Defaults -----------------------------------------
+# ------- Project Definition & Defaults -----------------------------------------
 # ===============================================================================
 
 project(HydroChrono 
@@ -26,7 +26,7 @@ project(HydroChrono
 )
 
 # ===============================================================================
-# --- 2.1. Parse Project Metadata ----------------------------------------------
+# -------- Parse Project Metadata ----------------------------------------------
 # ===============================================================================
 
 # Read and parse project.meta file if present; otherwise provide sensible defaults
@@ -107,7 +107,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # ===============================================================================
-# --- 3. User Options -----------------------------------------------------------
+# ------ User Options -----------------------------------------------------------
 # ===============================================================================
 
 option(HYDROCHRONO_ENABLE_TESTS "Enable tests" ON)
@@ -117,6 +117,10 @@ option(HYDROCHRONO_ENABLE_YAML_RUNNER "Enable YAML-based CLI runner" OFF)
 option(HYDROCHRONO_ENABLE_USER_DOC "User's documentation" OFF)
 option(HYDROCHRONO_ENABLE_PROG_DOC "Programmer's documentation" OFF)
 option(HYDROCHRONO_ENABLE_LOGGING "Enable debug logging" OFF)
+
+# ===============================================================================
+# --- 4. Build setup ------------------------------------------------------------
+# ===============================================================================
 
 # Fix for VS 2017 15.8 and newer to handle alignment specification with Eigen
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
@@ -162,8 +166,30 @@ endif()
 set(HYDROCHRONO_DEMO_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/demos CACHE PATH "Output directory for demo executables")
 set(HYDROCHRONO_TEST_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests CACHE PATH "Output directory for test executables")
 
+# Destination directory for HydroChrono data in BUILD tree
+set(HC_BUILD_DATA "${CMAKE_BINARY_DIR}/data")
+
+# Destination directory for HydroChrono data in INSTALL tree
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+    set(HC_INSTALL_DATA "data")
+    set(HC_INSTALL_DEMO "bin")
+    set(HC_INSTALL_PYTHON "bin")
+else()
+    set(HC_INSTALL_DATA "share/chrono/data")
+    set(HC_INSTALL_DEMO "share/chrono/bin")
+    set(HC_INSTALL_PYTHON "share/chrono/python")
+endif()
+
+# Copy data directory to BUILD tree
+file(COPY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_BUILD_DATA})
+message(STATUS "  Data directory copied to: ${HC_BUILD_DATA}/")
+
+# Install data directory
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/ DESTINATION ${HC_INSTALL_DATA})
+message(STATUS "  Data directory installed to: ${CMAKE_INSTALL_PREFIX}/${HC_INSTALL_DATA}/")
+
 # ===============================================================================
-# --- 4. Find Dependencies -----------------------------------------------------
+# ------- Find Dependencies -----------------------------------------------------
 # ===============================================================================
 
 # -- Chrono package --
@@ -232,7 +258,7 @@ find_package(OpenMP REQUIRED COMPONENTS CXX)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 # ===============================================================================
-# --- 5. Core Library Target ---------------------------------------------------
+# ------- Core Library Target ---------------------------------------------------
 # ===============================================================================
 
 # Helper function to configure common HydroChrono target properties
@@ -361,7 +387,7 @@ target_compile_definitions(HydroChrono
 )
 
 # ===============================================================================
-# --- 6. Auxiliary Targets (GUI, Tests, Demos) ---------------------------------
+# ------- Auxiliary Targets (GUI, Tests, Demos) ---------------------------------
 # ===============================================================================
 
 # -- Main YAML-Driven CLI App --
@@ -458,7 +484,7 @@ if(HYDROCHRONO_ENABLE_TESTS)
 endif()
 
 # ===============================================================================
-# --- 7. Installation -----------------------------------------------------------
+# ------ Installation -----------------------------------------------------------
 # ===============================================================================
 
 include(GNUInstallDirs)
@@ -516,7 +542,7 @@ endif()
 
 
 # ------------------------------------------------------------------------------
-# 7.1 Runtime installer and ZIP packaging for releases
+# Runtime installer and ZIP packaging for releases
 # ------------------------------------------------------------------------------
 
 # Flat install tree for public distribution

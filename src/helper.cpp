@@ -1,4 +1,7 @@
+#include <hydroc/config.h>
 #include <hydroc/helper.h>
+
+#include <chrono/core/ChDataPath.h>
 
 #include <cstdlib>
 #include <filesystem>  // C++17
@@ -32,15 +35,17 @@ int hydroc::SetInitialEnvironment(int argc, char* argv[]) noexcept {
         if (argc < 2) {
             hydroc::cli::LogWarning("Usage: .exe [<datadir>] or set HYDROCHRONO_DATA_DIR environment variable");
 
-            DATADIR = absolute(path("..") / ".." / "demos");
+            DATADIR = absolute(path(HC_DATA_DIR));
             hydroc::cli::LogInfo(std::string("Set default demos path to '") + getDataDir() + "'");
-            return 0;
         } else {
             DATADIR = absolute(path(argv[1]));
         }
     } else {
         DATADIR = absolute(path(env_p));
     }
+
+    chrono::SetChronoDataPath(CHRONO_DATA_DIR);
+
     return 0;
 }
 

@@ -1,3 +1,4 @@
+#include <hydroc/config.h>
 #include <hydroc/gui/guihelper.h>
 #include <hydroc/logging.h>
 using namespace hydroc::gui;

@@ -4,7 +4,9 @@
  * @brief Unit tests for the hydro YAML parser.
  *********************************************************************/
 
+#include <hydroc/config.h>
 #include "../../src/hydro_yaml_parser.h"
+
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -50,16 +52,8 @@
  * @brief Get the path to test data files relative to the project root.
  */
 std::string GetTestDataPath(const std::string& filename) {
-    // Get the current executable path
-    std::filesystem::path exe_path = std::filesystem::current_path();
-    
-    // Navigate to project root (from build/bin/tests/ to project root)
-    std::filesystem::path project_root = exe_path / "../../..";
-    
-    // Construct path to test data
-    std::filesystem::path test_data_path = project_root / "tests" / "data" / filename;
-    
-    return test_data_path.string();
+    auto DATADIR = std::filesystem::absolute(std::filesystem::path(HC_DATA_DIR));
+    return DATADIR.string() + "/yaml/" + filename;
 }
 
 /**

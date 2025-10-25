@@ -510,7 +510,7 @@ if(HYDROCHRONO_ENABLE_TESTS)
 	# Configure test environment with DLL paths
 	configure_test_environment()
 
-	add_subdirectory(tests)
+	add_subdirectory(tests/unit)
 	add_subdirectory(tests/regression)
 endif()
 

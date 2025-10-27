@@ -168,7 +168,6 @@ public:
      */
     void StopProgress() noexcept {
         if (showing_progress_) {
-            LoggingWriteGuard guard;
             if (!progress_completed_) {
                 // Clear the in-place progress line only if not completed
                 std::cerr << "\r";
@@ -255,8 +254,7 @@ private:
         const int percentage = static_cast<int>(progress * 100);
         std::string progress_text = bar + std::string(" ") + std::to_string(percentage) + "%";
         if (!message.empty()) progress_text += std::string(" - ") + message;
-        // Write in-place on the same console line using stderr, guarded to bypass interception
-        LoggingWriteGuard guard;
+        // Write in-place on the same console line using stderr; let interceptor handle quiet mode
         std::cerr << "\r" << progress_text;
         // Clear any remnants from a longer previous line
         int pad = std::max(0, progress_last_width_ - static_cast<int>(progress_text.size()));
@@ -460,6 +458,11 @@ namespace {
             // a newline (commonly used for in-place progress updates coming from
             // external libraries). We bypass the logger to preserve terminal state.
             if (buffer_.find('\r') != std::string::npos) {
+                // Respect quiet mode: suppress CLI output entirely when disabled
+                if (!g_initialized || !g_backend || !g_backend->GetConfig().enable_cli_output) {
+                    buffer_.clear();
+                    return;
+                }
                 if (original_) {
                     original_->sputn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
                 }
@@ -469,9 +472,22 @@ namespace {
 
             // If line looks like our own logger output (e.g., starts with '[' or begins with ANSI then '['), pass through
             if (!buffer_.empty() && (buffer_[0] == '[' || (buffer_[0] == '\033' && buffer_.find("[") != std::string::npos))) {
+                // Respect quiet mode: suppress CLI output when disabled
+                if (!g_initialized || !g_backend || !g_backend->GetConfig().enable_cli_output) {
+                    buffer_.clear();
+                    return;
+                }
+                // Heuristic: if it looks like a progress bar (e.g., contains '%'), render in-place without newline
+                bool looks_like_progress = (buffer_.find('%') != std::string::npos);
                 if (original_) {
-                    original_->sputn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
-                    original_->sputc('\n');
+                    if (looks_like_progress) {
+                        original_->sputc('\r');
+                        original_->sputn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+                        // Do not append newline; UpdateProgressDisplay will manage padding and final newline
+                    } else {
+                        original_->sputn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+                        original_->sputc('\n');
+                    }
                 }
                 buffer_.clear();
                 return;
@@ -479,6 +495,11 @@ namespace {
 
             // Route or suppress external prints
             if (kind_ == StreamKind::StdOut) {
+                // Respect quiet mode: suppress CLI output entirely when disabled
+                if (!g_initialized || !g_backend || !g_backend->GetConfig().enable_cli_output) {
+                    buffer_.clear();
+                    return;
+                }
                 if (StartsWith(buffer_, "File: ")) {
                     // Treat noisy OBJ path echoes as debug-only
                     hydroc::debug::LogDebug(buffer_);
@@ -492,6 +513,11 @@ namespace {
                     hydroc::cli::LogInfo(buffer_);
                 }
             } else { // StdErr
+                // Respect quiet mode: suppress CLI output entirely when disabled
+                if (!g_initialized || !g_backend || !g_backend->GetConfig().enable_cli_output) {
+                    buffer_.clear();
+                    return;
+                }
                 if (buffer_.find("Cannot open colormap data file") != std::string::npos) {
                     // Collect for Warnings section only; avoid inline duplication
                     hydroc::cli::CollectWarning(buffer_);

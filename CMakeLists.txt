@@ -289,10 +289,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
                ${PROJECT_BINARY_DIR}/hydroc/config.h-install
                @ONLY)
 
-install(FILES ${PROJECT_BINARY_DIR}/hydroc/config-install.h
-        RENAME "config.h"
-        DESTINATION include/chrono)
-
 # ===============================================================================
 # ------- Core Library Target ---------------------------------------------------
 # ===============================================================================
@@ -405,9 +401,15 @@ elseif(TARGET hdf5-shared)
   target_link_libraries(HydroChrono PUBLIC hdf5_hl-shared)
   target_link_libraries(HydroChrono PUBLIC hdf5_hl_cpp-shared)
   target_link_libraries(HydroChrono PUBLIC hdf5_tools-shared)
+  list(APPEND HDF5_TARGETS hdf5-shared)
+  list(APPEND HDF5_TARGETS hdf5_cpp-shared)
+  list(APPEND HDF5_TARGETS hdf5_hl-shared)
+  list(APPEND HDF5_TARGETS hdf5_hl_cpp-shared)
+  list(APPEND HDF5_TARGETS hdf5_tools-shared)
 elseif(TARGET HDF5::HDF5)
   message(STATUS "Linking HDF5::HDF5")
   target_link_libraries(HydroChrono PUBLIC HDF5::HDF5)
+  list(APPEND HDF5_TARGETS HDF5::HDF5)
 else()
   message(STATUS "No HDF5 target found")
   target_compile_definitions(HydroChrono PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${HDF5_COMPILE_DEFS}>)
@@ -541,6 +543,15 @@ if(HC_INSTALL_DEV_KIT)
     install(DIRECTORY include/hydroc
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
+    
+    # Install config.h header
+    install(FILES ${PROJECT_BINARY_DIR}/hydroc/config.h-install
+        RENAME "config.h"
+        DESTINATION include/hydroc)
+
+    # Install version.h header
+    install(FILES ${PROJECT_BINARY_DIR}/hydroc/version.h
+        DESTINATION include/hydroc)
 
     # Generate and install package config files for find_package() support
     include(CMakePackageConfigHelpers)
@@ -571,7 +582,6 @@ else()
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -O2")
 endif()
 
-
 # ------------------------------------------------------------------------------
 # Runtime installer and ZIP packaging for releases
 # ------------------------------------------------------------------------------
@@ -585,91 +595,44 @@ if(TARGET run_hydrochrono)
 		RUNTIME DESTINATION bin COMPONENT runtime)
 endif()
 
-# Collect runtime DLLs from imported targets when available
-set(HC_DLLS)
-foreach(tgt IN ITEMS Chrono::Chrono_core Chrono::Chrono_irrlicht Chrono::Chrono_parsers Chrono::ChronoModels_robot yaml-cpp yaml-cpp::yaml-cpp)
-	if(TARGET ${tgt})
-		list(APPEND HC_DLLS "$<TARGET_FILE:${tgt}>")
-	endif()
-endforeach()
+# On Windows, install DLLs
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 
-# Irrlicht.dll overridable from build system; default derived from Irrlicht_ROOT
-set(IRRLICHT_DLL_PATH_DEFAULT "${Irrlicht_ROOT}/bin/Win64-VisualStudio/Irrlicht.dll")
-set(IRRLICHT_DLL_PATH "${IRRLICHT_DLL_PATH_DEFAULT}" CACHE FILEPATH "Path to Irrlicht.dll")
-if(EXISTS "${IRRLICHT_DLL_PATH}")
-	list(APPEND HC_DLLS "${IRRLICHT_DLL_PATH}")
-endif()
+    # Chrono DLLs
+    foreach(tgt ${CHRONO_TARGETS})
+        get_target_property(tgt_DLL ${tgt} IMPORTED_LOCATION_RELEASE)
+        get_target_property(tgt_DLL_d ${tgt} IMPORTED_LOCATION_DEBUG)
+        if(EXISTS ${tgt_DLL})
+            install(FILES ${tgt_DLL} DESTINATION bin COMPONENT runtime)
+        endif()
+        if(EXISTS ${tgt_DLL_d})
+            install(FILES ${tgt_DLL_d} DESTINATION bin COMPONENT runtime)
+        endif()
+    endforeach()
 
-# YAML-CPP runtime DLL overridable from build system
-set(YAML_CPP_DLL_PATH "" CACHE FILEPATH "Path to yaml-cpp runtime DLL (yaml-cpp.dll)")
-if(EXISTS "${YAML_CPP_DLL_PATH}")
-	list(APPEND HC_DLLS "${YAML_CPP_DLL_PATH}")
-endif()
-
-if(HC_DLLS)
-	install(FILES ${HC_DLLS} DESTINATION bin COMPONENT runtime)
-endif()
-
-# Ensure yaml-cpp.dll is part of the runtime component in the ZIP (OPTIONAL handles missing paths)
-install(FILES
-    "${Chrono_DIR}/../bin/Release/yaml-cpp.dll"
-    "${Chrono_DIR}/../bin/RelWithDebInfo/yaml-cpp.dll"
-    "${Chrono_DIR}/../bin/MinSizeRel/yaml-cpp.dll"
-    "${Chrono_DIR}/../bin/Debug/yaml-cpp.dll"
-    "${CMAKE_BINARY_DIR}/bin/Release/yaml-cpp.dll"
-    "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo/yaml-cpp.dll"
-    "${CMAKE_BINARY_DIR}/bin/MinSizeRel/yaml-cpp.dll"
-    "${CMAKE_BINARY_DIR}/bin/Debug/yaml-cpp.dll"
-    DESTINATION bin COMPONENT runtime OPTIONAL)
-
-# HDF5 runtime DLLs (prefer imported targets, fallback to bin under HDF5_ROOT)
-set(HDF5_DLLS)
-foreach(tgt IN ITEMS HDF5::HDF5 HDF5::HDF5_CXX hdf5::hdf5 hdf5::hdf5_cpp hdf5::hdf5-shared hdf5::hdf5_cpp-shared)
-	if(TARGET ${tgt})
-		list(APPEND HDF5_DLLS "$<TARGET_FILE:${tgt}>")
-	endif()
-endforeach()
-if(HDF5_DLLS)
-	install(FILES ${HDF5_DLLS} DESTINATION bin COMPONENT runtime)
-else()
-	if(DEFINED HDF5_ROOT)
-		install(CODE "
-		  file(GLOB _H5_DLLS \"${HDF5_ROOT}/bin/*.dll\")
-		  foreach(_f IN LISTS _H5_DLLS)
-		    if(EXISTS \"${_f}\")
-		      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
-		    endif()
-		  endforeach()
-		")
-	endif()
-endif()
-
-# Fallback: copy all Chrono-built DLLs for the active config into bin
-install(CODE "
-  file(GLOB _ALL_DLLS \"${Chrono_DIR}/../bin/${CMAKE_INSTALL_CONFIG_NAME}/*.dll\")
-  foreach(_f IN LISTS _ALL_DLLS)
-    if(EXISTS \"${_f}\")
-      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
+    # HDF5 DLLs
+    foreach(tgt ${HDF5_TARGETS})
+        get_target_property(tgt_DLL ${tgt} IMPORTED_LOCATION_RELEASE)
+        if(EXISTS ${tgt_DLL})
+            install(FILES ${tgt_DLL} DESTINATION bin COMPONENT runtime)
+        endif()
+    endforeach()
+    
+    # Python DLLs, if Chrono::Parsers depends on it
+    if(CHRONO_PARSERS_PYTHON)
+        find_package(Python3 QUIET COMPONENTS Interpreter Development)
+        if(Python3_Interpreter_FOUND AND Python3_Development_FOUND)
+            get_target_property(tgt_DLL Python3::Python IMPORTED_LOCATION_RELEASE)
+            get_target_property(tgt_DLL_d Python3::Python IMPORTED_LOCATION_DEBUG)
+            if(EXISTS ${tgt_DLL})
+                install(FILES ${tgt_DLL} DESTINATION bin COMPONENT runtime)
+            endif()
+            if(EXISTS ${tgt_DLL_d})
+                install(FILES ${tgt_DLL_d} DESTINATION bin COMPONENT runtime)
+            endif()
+        endif()
     endif()
-  endforeach()
-")
 
-# Also copy any DLLs produced or staged in this project's build bin (e.g., yaml-cpp.dll)
-install(CODE "
-  file(GLOB _HC_DLLS \"${CMAKE_BINARY_DIR}/bin/${CMAKE_INSTALL_CONFIG_NAME}/*.dll\")
-  foreach(_f IN LISTS _HC_DLLS)
-    if(EXISTS \"${_f}\")
-      file(INSTALL DESTINATION \"${CMAKE_INSTALL_PREFIX}/bin\" TYPE FILE FILES \"${_f}\")
-    endif()
-  endforeach()
-")
-
-# Removed fragile fallback DLL copy to avoid install script parse errors. The
-# release DLLs should be resolved via imported targets or IRRLICHT_DLL_PATH.
-
-# Optional runtime data folder
-if(EXISTS "${PROJECT_SOURCE_DIR}/data")
-	install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/ DESTINATION data COMPONENT runtime)
 endif()
 
 # Chrono visual assets (skybox, colormaps) for GUI
@@ -700,21 +663,8 @@ if(HC_INSTALL_DEV_DEMOS)
 endif()
 
 # MSVC runtime DLLs and ZIP packaging via CPack
- include(InstallRequiredSystemLibraries)
- set(CPACK_GENERATOR "ZIP")
- set(CPACK_PACKAGE_NAME "HydroChrono")
- set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
- include(CPack)
-
-# Optionally include Python runtime DLL if Chrono::Parsers depends on it
-find_package(Python3 QUIET COMPONENTS Interpreter)
-if(Python3_Interpreter_FOUND OR Python3_FOUND)
-    get_filename_component(_PY_DIR "${Python3_EXECUTABLE}" DIRECTORY)
-    if(DEFINED Python3_VERSION_MAJOR AND DEFINED Python3_VERSION_MINOR)
-        set(_PY_DLL_NAME "python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}.dll")
-        set(_PY_DLL_PATH "${_PY_DIR}/${_PY_DLL_NAME}")
-        if(EXISTS "${_PY_DLL_PATH}")
-            install(FILES "${_PY_DLL_PATH}" DESTINATION bin COMPONENT runtime)
-        endif()
-    endif()
-endif()
+include(InstallRequiredSystemLibraries)
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "HydroChrono")
+set(CPACK_COMPONENTS_ALL runtime python-tests dev-demos)
+include(CPack)

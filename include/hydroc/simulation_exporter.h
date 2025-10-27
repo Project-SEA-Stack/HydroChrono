@@ -133,6 +133,16 @@ class SimulationExporter {
      */
     void Finalize();
 
+    /**
+     * @brief Write irregular wave input arrays under /inputs/simulation/waves/irregular.
+     *
+     * All arrays are 1D and written with attributes documenting units.
+     */
+    void WriteIrregularInputs(const std::vector<double>& frequencies_hz,
+                              const std::vector<double>& spectral_densities,
+                              const std::vector<double>& free_surface_time,
+                              const std::vector<double>& free_surface_eta);
+
     
 
     // Runtime metadata (written into /meta/run at Finalize)

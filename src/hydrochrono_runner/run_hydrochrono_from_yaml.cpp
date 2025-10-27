@@ -5,6 +5,7 @@
 #include "../hydro_yaml_parser.h"
 #include <hydroc/hydro_forces.h>
 #include <hydroc/simulation_exporter.h>
+#include <hydroc/wave_types.h>
 
 #include <chrono_parsers/yaml/ChParserMbsYAML.h>
 #include <chrono/physics/ChSystem.h>
@@ -450,8 +451,10 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     
                     // Setup hydrodynamic forces
                     hydroc::debug::LogDebug("Initializing TestHydro...");
-                    // Provide a neutral horizon (Chrono governs runtime via YAML/UI)
-                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, /*time_end_hint*/ 0.0, 0.0);
+                    // Provide simulation horizon from YAML end_time (important for irregular waves spectrum)
+                    double sim_duration_hint = 0.0;
+                    TryFindYamlDouble(sim_file, "end_time", sim_duration_hint);
+                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, sim_duration_hint, 0.0);
                     hydroc::debug::LogDebug("Hydrodynamic forces initialized successfully");
 
                     // Inform location for diagnostics CSVs: write to hydro file directory
@@ -657,9 +660,23 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                 exporter = std::make_unique<hydroc::SimulationExporter>(exp_opts);
 
                 // Write static info and model before stepping
-                exporter->WriteSimulationInfo(system.get(), std::string(""), std::filesystem::path(model_file).filename().generic_string(), loop_dt, /*duration_seconds*/ 0.0);
+                double duration_hint = 0.0; TryFindYamlDouble(sim_file, "end_time", duration_hint);
+                exporter->WriteSimulationInfo(system.get(), std::string(""), std::filesystem::path(model_file).filename().generic_string(), loop_dt, duration_hint);
                 exporter->WriteModel(system.get());
                 exporter->BeginResults(system.get(), /*expected_steps*/ 0);
+
+                // If irregular waves are configured, persist spectrum and eta(t) inputs to HDF5
+                if (test_hydro) {
+                    auto wave_ptr = test_hydro->GetWave();
+                    if (wave_ptr && wave_ptr->GetWaveMode() == WaveMode::irregular) {
+                        auto irreg = std::static_pointer_cast<IrregularWaves>(wave_ptr);
+                        std::vector<double> f = irreg->GetFrequenciesHz();
+                        std::vector<double> S = irreg->GetSpectrum();
+                        std::vector<double> tvec = irreg->GetFreeSurfaceTime();
+                        std::vector<double> eta = irreg->GetFreeSurfaceElevation();
+                        exporter->WriteIrregularInputs(f, S, tvec, eta);
+                    }
+                }
             } catch (const std::exception& e) {
                 hydroc::cli::LogWarning(std::string("HDF5 exporter disabled: ") + e.what());
                 exporter.reset();

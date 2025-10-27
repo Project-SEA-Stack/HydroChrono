@@ -297,9 +297,14 @@ class IrregularWaves : public WaveBase {
     void Initialize() override {}
 
     void CreateSpectrum();
+    // Returns spectral density values S(f) (one per frequency bin)
     std::vector<double> GetSpectrum();
+    // Returns precomputed free-surface elevation eta(t) samples
     std::vector<double> GetFreeSurfaceElevation();
-    std::vector<double> GetEtaTimeData();
+    // Returns time samples corresponding to eta(t)
+    std::vector<double> GetFreeSurfaceTime() const;
+    // Returns the frequency bins (Hz)
+    std::vector<double> GetFrequenciesHz() const;
 
     Eigen::VectorXd GetForceAtTime(double t) override;
 

@@ -236,6 +236,9 @@ TestHydro::TestHydro(std::vector<std::shared_ptr<ChBody>> user_bodies,
     // Set up hydro inputs
     user_waves_ = waves;
     AddWaves(user_waves_);
+
+    // If irregular waves are active, publish spectrum and free-surface inputs into HDF5 if an exporter is present.
+    // The exporter is managed by the runner; here we only expose getters via the waves object.
 }
 
 void TestHydro::AddWaves(std::shared_ptr<WaveBase> waves) {

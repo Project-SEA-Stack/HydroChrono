@@ -178,6 +178,11 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
     bool period_form_linspace = false;
     bool period_form_range = false;
 
+    // Wave convenience fields
+    bool waves_amplitude_set = false;
+    double waves_amplitude = 0.0;
+    bool period_set_by_synonym = false; // scalar period given via t/p/tp
+
     auto parse_inline_brace_kv = [](const std::string& v) -> std::vector<std::pair<std::string, std::string>> {
         // Expect something like: { start: 6.0, stop: 9.0, num: 4 }
         std::vector<std::pair<std::string, std::string>> out;
@@ -390,11 +395,18 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     }
                 } else if (in_waves) {
                     // Parse wave properties
-                    if (!in_period_block && key == "type") {
+                    // normalize key for shorthand handling
+                    std::string key_lower = key;
+                    std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
+
+                    if (!in_period_block && key_lower == "type") {
                         data.waves.type = value;
-                    } else if (!in_period_block && key == "height") {
+                    } else if (!in_period_block && (key_lower == "height" || key_lower == "h")) {
                         data.waves.height = ParseDouble(value, 0.0);
-                    } else if (!in_period_block && key == "period") {
+                    } else if (!in_period_block && (key_lower == "amplitude" || key_lower == "a")) {
+                        waves_amplitude = ParseDouble(value, 0.0);
+                        waves_amplitude_set = true;
+                    } else if (!in_period_block && (key_lower == "period" || key_lower == "t" || key_lower == "tp" || key_lower == "p")) {
                         period_block_seen = true;
                         period_form_values = period_form_linspace = period_form_range = false;
                         data.waves.period_values.clear();
@@ -403,6 +415,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         if (!looks_structured) {
                             data.waves.period = ParseDouble(value, 0.0);
                             data.waves.period_values.push_back(data.waves.period);
+                            period_set_by_synonym = (key_lower != "period");
                         } else {
                             // Inline forms on same line
                             // values inline list inside braces
@@ -509,13 +522,13 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                             throw std::runtime_error("waves.period: range produced no values");
                         }
                         data.waves.period = data.waves.period_values.front();
-                    } else if (!in_period_block && key == "direction") {
+                    } else if (!in_period_block && key_lower == "direction") {
                         data.waves.direction = ParseDouble(value, 0.0);
-                    } else if (!in_period_block && key == "phase") {
+                    } else if (!in_period_block && key_lower == "phase") {
                         data.waves.phase = ParseDouble(value, 0.0);
-                    } else if (!in_period_block && key == "spectrum") {
+                    } else if (!in_period_block && key_lower == "spectrum") {
                         data.waves.spectrum = value;
-                    } else if (!in_period_block && key == "seed") {
+                    } else if (!in_period_block && key_lower == "seed") {
                         try { data.waves.seed = std::stoi(value); } catch (...) { data.waves.seed = -1; }
                     }
                 }
@@ -553,6 +566,34 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         // If no structured values captured, ensure period_values mirrors scalar period
         if (data.waves.period_values.empty() && data.waves.period > 0.0) {
             data.waves.period_values.push_back(data.waves.period);
+        }
+    }
+
+    // Apply amplitude to height if provided
+    if (waves_amplitude_set) {
+        const double derived_height = 2.0 * waves_amplitude;
+        if (data.waves.height > 0.0) {
+            const double eps = 1e-9;
+            if (std::abs(data.waves.height - derived_height) > eps) {
+                throw std::runtime_error("waves: both height and amplitude provided but inconsistent (expected height = 2*amplitude)");
+            }
+        } else {
+            data.waves.height = derived_height;
+        }
+    }
+
+    // Validation and helpful errors for regular waves
+    {
+        std::string type_lower = data.waves.type;
+        std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(), ::tolower);
+        if (type_lower == "regular") {
+            if (data.waves.height <= 0.0) {
+                throw std::runtime_error("waves: regular requires wave height (use 'height' or 'h', or 'amplitude'/'a')");
+            }
+            bool has_period = (data.waves.period > 0.0) || !data.waves.period_values.empty();
+            if (!has_period) {
+                throw std::runtime_error("waves: regular requires wave period (use 'period' or shorthand 't', 'tp', or 'p')");
+            }
         }
     }
 

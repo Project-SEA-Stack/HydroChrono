@@ -5,6 +5,7 @@
 #include "../hydro_yaml_parser.h"
 #include <hydroc/hydro_forces.h>
 #include <hydroc/simulation_exporter.h>
+#include <hydroc/wave_types.h>
 
 #include <chrono_parsers/yaml/ChParserMbsYAML.h>
 #include <chrono/physics/ChSystem.h>
@@ -23,6 +24,7 @@
 #include <sstream>
 #include <chrono>
 #include <iomanip>
+#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -449,8 +451,10 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                     
                     // Setup hydrodynamic forces
                     hydroc::debug::LogDebug("Initializing TestHydro...");
-                    // Provide a neutral horizon (Chrono governs runtime via YAML/UI)
-                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, /*time_end_hint*/ 0.0, 0.0);
+                    // Provide simulation horizon from YAML end_time (important for irregular waves spectrum)
+                    double sim_duration_hint = 0.0;
+                    TryFindYamlDouble(sim_file, "end_time", sim_duration_hint);
+                    test_hydro = SetupHydroFromYAML(hydro_data, bodies, loop_dt, sim_duration_hint, 0.0);
                     hydroc::debug::LogDebug("Hydrodynamic forces initialized successfully");
 
                     // Inform location for diagnostics CSVs: write to hydro file directory
@@ -656,9 +660,23 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                 exporter = std::make_unique<hydroc::SimulationExporter>(exp_opts);
 
                 // Write static info and model before stepping
-                exporter->WriteSimulationInfo(system.get(), std::string(""), std::filesystem::path(model_file).filename().generic_string(), loop_dt, /*duration_seconds*/ 0.0);
+                double duration_hint = 0.0; TryFindYamlDouble(sim_file, "end_time", duration_hint);
+                exporter->WriteSimulationInfo(system.get(), std::string(""), std::filesystem::path(model_file).filename().generic_string(), loop_dt, duration_hint);
                 exporter->WriteModel(system.get());
                 exporter->BeginResults(system.get(), /*expected_steps*/ 0);
+
+                // If irregular waves are configured, persist spectrum and eta(t) inputs to HDF5
+                if (test_hydro) {
+                    auto wave_ptr = test_hydro->GetWave();
+                    if (wave_ptr && wave_ptr->GetWaveMode() == WaveMode::irregular) {
+                        auto irreg = std::static_pointer_cast<IrregularWaves>(wave_ptr);
+                        std::vector<double> f = irreg->GetFrequenciesHz();
+                        std::vector<double> S = irreg->GetSpectrum();
+                        std::vector<double> tvec = irreg->GetFreeSurfaceTime();
+                        std::vector<double> eta = irreg->GetFreeSurfaceElevation();
+                        exporter->WriteIrregularInputs(f, S, tvec, eta);
+                    }
+                }
             } catch (const std::exception& e) {
                 hydroc::cli::LogWarning(std::string("HDF5 exporter disabled: ") + e.what());
                 exporter.reset();
@@ -697,6 +715,14 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
 
         if (nogui) {
             const double end_time_bound = (yaml_end_time > 0.0) ? yaml_end_time : 40.0;
+            // Estimate total steps for progress bar; ensure at least 1
+            const double remaining_time = std::max(0.0, end_time_bound - initial_time);
+            const size_t total_steps_est = static_cast<size_t>(std::max(1.0, std::ceil(remaining_time / std::max(1e-12, loop_dt))));
+            size_t last_progress_step = 0;
+
+            // Initial progress line
+            hydroc::cli::ShowProgress(0, total_steps_est, std::string("t=") + hydroc::FormatNumber(initial_time, 2) + " / " + hydroc::FormatNumber(end_time_bound, 2) + " s");
+
             while (system->GetChTime() < end_time_bound) {
                 double current_time = system->GetChTime();
                 try {
@@ -709,17 +735,32 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
                         exporter->RecordStep(system.get());
                         if (profile_mode) { prof_export_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     }
+                    // Update progress periodically to reduce console churn
+                    if (step_count == 1 || step_count - static_cast<int>(last_progress_step) >= 25) {
+                        const size_t current_steps = static_cast<size_t>(std::min<double>(total_steps_est, std::ceil((system->GetChTime() - initial_time) / std::max(1e-12, loop_dt))));
+                        std::string msg = std::string("t=") + hydroc::FormatNumber(system->GetChTime(), 2) + " / " + hydroc::FormatNumber(end_time_bound, 2) + " s";
+                        hydroc::cli::ShowProgress(current_steps, total_steps_est, msg);
+                        last_progress_step = static_cast<size_t>(step_count);
+                    }
                     previous_time = current_time;
                 } catch (const std::exception& e) {
+                    hydroc::cli::StopProgress();
                     hydroc::cli::LogError(std::string("🔥 Exception during DoStepDynamics at step ") + std::to_string(step_count) + ": " + e.what());
                     hydroc::cli::LogError(std::string("Simulation time: ") + hydroc::FormatNumber(current_time, 6) + " s");
                     hydroc::cli::LogError(std::string("Step size: ") + hydroc::FormatNumber(loop_dt, 6) + " s");
                     break;
                 } catch (...) {
+                    hydroc::cli::StopProgress();
                     hydroc::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
                     hydroc::cli::LogError(std::string("Simulation time: ") + hydroc::FormatNumber(current_time, 6) + " s");
                     break;
                 }
+            }
+            // Finalize progress line
+            if (system->GetChTime() >= end_time_bound - 1e-9) {
+                hydroc::cli::ShowProgress(total_steps_est, total_steps_est, "Completed");
+            } else {
+                hydroc::cli::StopProgress();
             }
         } else {
             // GUI-driven loop: respects pause via ui.simulationStarted and closes when window stops

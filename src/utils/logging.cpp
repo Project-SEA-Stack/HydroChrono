@@ -301,7 +301,7 @@ void CLILogger::ShowBanner() {
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
     Log(LogLevel::Success, "│                                   Hydrodynamics for Project Chrono                                  │", LogColor::White);
     Log(LogLevel::Success, "│                                                                                                     │", LogColor::BrightCyan);
-    Log(LogLevel::Success, "│  Version        : 0.3.1                                                                             │", LogColor::Gray);
+    Log(LogLevel::Success, "│  Version        : 0.3.2                                                                             │", LogColor::Gray);
     Log(LogLevel::Success, "│  Status         : Prototype                                                                         │", LogColor::Gray);
     Log(LogLevel::Success, "│  Author         : SEA-Stack Development Team                                                        │", LogColor::Gray);
     Log(LogLevel::Success, "│  Lead Developer : David Ogden                                                                       │", LogColor::Gray);

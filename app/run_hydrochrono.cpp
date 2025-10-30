@@ -4,6 +4,7 @@
  */
 
 #include <hydroc/hydrochrono_runner/run_hydrochrono_from_yaml.h>
+#include <hydroc/config.h>
 #include <hydroc/version.h>
 #include "../src/utils/misc_options.h"
 #include <hydroc/logging.h>

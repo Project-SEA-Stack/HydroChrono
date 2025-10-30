@@ -1,3 +1,4 @@
+#include <hydroc/config.h>
 #include <hydroc/version.h>
 #include "../utils/setup_parser.h"
 #include <hydroc/logging.h>
@@ -362,16 +363,9 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
 
         // ---------------------------------------------------------------------
         // 1.1 Configure Chrono data path for installed ZIP (skybox/colormaps)
-        //     Resolve relative to the executable: <install_root>/data/chrono/
         // ---------------------------------------------------------------------
         try {
-            std::filesystem::path exe_abs = std::filesystem::absolute(std::filesystem::path(argv[0]));
-            std::filesystem::path exe_dir = exe_abs.parent_path();
-            std::filesystem::path install_root = exe_dir.parent_path();
-            // Prefer <install_root>/data; fall back to <install_root>/data/chrono for older packages
-            std::filesystem::path data_primary   = install_root / "data";
-            std::filesystem::path data_fallback  = install_root / "data" / "chrono";
-            std::filesystem::path chrono_data    = std::filesystem::exists(data_primary) ? data_primary : data_fallback;
+            std::filesystem::path chrono_data(std::string(HC_DATA_DIR) + "/chrono");
             if (std::filesystem::exists(chrono_data)) {
                 std::string chrono_data_str = chrono_data.generic_string();
                 if (!chrono_data_str.empty() && chrono_data_str.back() != '/') chrono_data_str.push_back('/');
@@ -414,7 +408,7 @@ int RunHydroChronoFromYAML(int argc, char* argv[]) {
         hydroc::cli::ShowSectionSeparator();
         DisplaySimulationSummary(input_directory, model_file, sim_file, setup_config, system.get(), nogui);
         
-                // ---------------------------------------------------------------------
+        // ---------------------------------------------------------------------
         // 5. Setup hydrodynamic forces and display wave info
         // ---------------------------------------------------------------------
         std::unique_ptr<TestHydro> test_hydro;

@@ -50,6 +50,9 @@ std::string getDataDir() noexcept;
  */
 void ensure_directory_exists(const std::filesystem::path& path);
 
+std::string getDemoOutDir();
+std::string getTestOutDir();
+
 template <typename T>
 void WriteDataToFile(const std::vector<T>& data, const std::string& filename) {
     std::ofstream outFile(filename);

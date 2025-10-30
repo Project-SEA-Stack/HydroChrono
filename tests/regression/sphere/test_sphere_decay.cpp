@@ -120,13 +120,14 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-    // Create results directory if it doesn't exist
-    //std::filesystem::path results_dir("./" + std::string(RESULTS_DIR));
-    std::filesystem::path results_dir(RESULTS_DIR_NAME);
-    hydroc::ensure_directory_exists(results_dir);
+    std::string out_dir = hydroc::getTestOutDir();
+    if (profilingOn || saveDataOn) {
+        out_dir = out_dir + "/" + RESULTS_DIR_NAME;
+        std::filesystem::create_directory(std::filesystem::path(out_dir));
+    }
 
     if (profilingOn) {
-        std::ofstream profilingFile(results_dir / RESULTS_FILE_NAME "_DURATION.txt");
+        std::ofstream profilingFile(out_dir + "/" + RESULTS_FILE_NAME + "_duration.txt");
         if (profilingFile.is_open()) {
             profilingFile << duration << " ms\n";
             profilingFile.close();
@@ -136,7 +137,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (saveDataOn) {
-        std::ofstream outputFile(results_dir / RESULTS_FILE_NAME ".txt");
+        std::ofstream outputFile(out_dir + "/" + RESULTS_FILE_NAME + ".txt");
         if (outputFile.is_open()) {
             outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12)
                        << "Heave (m)"

@@ -20,8 +20,6 @@ using namespace chrono;
 int main(int argc, char* argv[]) {
     std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
 
-    SetChronoDataPath(CHRONO_DATA_DIR);
-
     if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
         return 1;
     }
@@ -36,8 +34,8 @@ int main(int argc, char* argv[]) {
     std::filesystem::path DATADIR(hydroc::getDataDir());
 
     auto body1_meshfame =
-        (DATADIR / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
-    auto h5fname = (DATADIR / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
+        (DATADIR / "demos" / "sphere" / "geometry" / "oes_task10_sphere.obj").lexically_normal().generic_string();
+    auto h5fname = (DATADIR / "demos" / "sphere" / "hydroData" / "sphere.h5").lexically_normal().generic_string();
 
     // system/solver settings
     ChSystemNSC system;
@@ -123,41 +121,20 @@ int main(int argc, char* argv[]) {
     auto end          = std::chrono::high_resolution_clock::now();
     unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+    std::string out_dir = hydroc::getDemoOutDir();
+    if (profilingOn || saveDataOn) {
+        out_dir = out_dir + "/" + RESULTS_DIR_NAME;
+        std::filesystem::create_directory(std::filesystem::path(out_dir));
+    }
+
     if (profilingOn) {
-        std::ofstream profilingFile;
-        profilingFile.open("./results/sphere_decay_duration.txt");
-        if (!profilingFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directory("./results");
-                profilingFile.open("./results/sphere_decay_duration.txt");
-                if (!profilingFile.is_open()) {
-                    // TODO instead of ending program, skip to next saveDataOn if statment
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
-        }
+        std::ofstream profilingFile(out_dir + "/decay_duration.txt");
         profilingFile << duration << " ms\n";
         profilingFile.close();
     }
 
     if (saveDataOn) {
-        std::ofstream outputFile;
-        outputFile.open("./results/sphere_decay.txt");
-        if (!outputFile.is_open()) {
-            if (!std::filesystem::exists("./results")) {
-                std::cout << "Path " << std::filesystem::absolute("./results") << " does not exist, creating it now..."
-                          << std::endl;
-                std::filesystem::create_directory("./results");
-                outputFile.open("./results/sphere_decay.txt");
-                if (!outputFile.is_open()) {
-                    std::cout << "Still cannot open file, ending program" << std::endl;
-                    return 0;
-                }
-            }
-        }
+        std::ofstream outputFile(out_dir + "/decay.txt");
         outputFile << std::left << std::setw(10) << "Time (s)" << std::right << std::setw(12)
                    << "Heave (m)"
                    //<< std::right << std::setw(18) << "Heave Vel (m/s)"

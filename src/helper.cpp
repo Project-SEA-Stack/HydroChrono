@@ -58,3 +58,15 @@ void hydroc::ensure_directory_exists(const std::filesystem::path& path) {
         std::filesystem::create_directory(path);
     }
 }
+
+std::string hydroc::getDemoOutDir() {
+    std::string dir_name = "results/demos";
+    std::filesystem::create_directories(dir_name);
+    return dir_name;
+}
+
+std::string hydroc::getTestOutDir() {
+    std::string dir_name = "results/tests";
+    std::filesystem::create_directories(dir_name);
+    return dir_name;
+}

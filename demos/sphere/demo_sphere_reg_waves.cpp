@@ -1,3 +1,4 @@
+#include <hydroc/config.h>
 #include <hydroc/gui/guihelper.h>
 #include <hydroc/helper.h>
 #include <hydroc/hydro_forces.h>
@@ -28,10 +29,10 @@ int main(int argc, char* argv[]) {
                                       479668.979, 633979.761, 784083.286, 932117.647, 1077123.445};
     int reg_wave_num_max           = task10_wave_amps.size();
 
-    std::cout << reg_wave_num_max;
+    std::cout << "Num waves: " << reg_wave_num_max << std::endl;
 
     for (int reg_wave_num = 1; reg_wave_num <= reg_wave_num_max; ++reg_wave_num) {
-        std::cout << "Chrono version: " << CHRONO_VERSION << "\n\n";
+        std::cout << reg_wave_num << "  ";
 
         if (hydroc::SetInitialEnvironment(argc, argv) != 0) {
             return 1;
@@ -152,41 +153,20 @@ int main(int argc, char* argv[]) {
         auto end          = std::chrono::high_resolution_clock::now();
         unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+        std::string out_dir = hydroc::getDemoOutDir();
+        if (profilingOn || saveDataOn) {
+            out_dir = out_dir + "/" + RESULTS_DIR_NAME;
+            std::filesystem::create_directory(std::filesystem::path(out_dir));
+        }
+
         if (profilingOn) {
-            std::string out_file = "./results/sphere_reg_waves_" + std::to_string(reg_wave_num) + "_duration.txt";
-            std::ofstream outputFile(out_file);
-            // profilingFile.open("./results/sphere_reg_waves_duration.txt");
-            if (!outputFile.is_open()) {
-                if (!std::filesystem::exists("./results")) {
-                    std::cout << "Path " << std::filesystem::absolute("./results")
-                              << " does not exist, creating it now..." << std::endl;
-                    std::filesystem::create_directories("./results");
-                    outputFile.open(out_file);
-                    if (!outputFile.is_open()) {
-                        std::cout << "Still cannot open file, ending program" << std::endl;
-                        return 0;
-                    }
-                }
-            }
+            std::ofstream outputFile(out_dir + "/reg_waves_" + std::to_string(reg_wave_num) + "_duration.txt");
             outputFile << duration << "\n";
             outputFile.close();
         }
 
         if (saveDataOn) {
-            std::string out_file = "./results/sphere_reg_waves_" + std::to_string(reg_wave_num) + ".txt";
-            std::ofstream outputFile(out_file);
-            if (!outputFile.is_open()) {
-                if (!std::filesystem::exists("./results")) {
-                    std::cout << "Path " << std::filesystem::absolute("./results")
-                              << " does not exist, creating it now..." << std::endl;
-                    std::filesystem::create_directories("./results");
-                    outputFile.open(out_file);
-                    if (!outputFile.is_open()) {
-                        std::cout << "Still cannot open file, ending program" << std::endl;
-                        return 0;
-                    }
-                }
-            }
+            std::ofstream outputFile(out_dir + "/reg_waves_" + std::to_string(reg_wave_num) + ".txt");
             outputFile.precision(10);
             outputFile.width(12);
             outputFile << "Wave #: \t" << reg_wave_num << "\n";

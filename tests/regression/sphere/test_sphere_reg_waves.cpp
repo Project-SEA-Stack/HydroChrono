@@ -152,13 +152,15 @@ int main(int argc, char* argv[]) {
         auto end          = std::chrono::high_resolution_clock::now();
         unsigned duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-        std::filesystem::path results_dir(RESULTS_DIR_NAME);
-        hydroc::ensure_directory_exists(results_dir);
+        std::string out_dir = hydroc::getTestOutDir();
+        if (profilingOn || saveDataOn) {
+            out_dir = out_dir + "/" + RESULTS_DIR_NAME;
+            std::filesystem::create_directory(std::filesystem::path(out_dir));
+        }
 
         if (profilingOn) {
-            std::string out_file =
-                results_dir.string() + "/" + RESULTS_FILE_NAME + "_DURATION_" + std::to_string(reg_wave_num) + ".txt";
-            std::ofstream profilingFile(out_file);
+            std::ofstream profilingFile(out_dir + "/" + RESULTS_FILE_NAME + "_" + std::to_string(reg_wave_num) +
+                                        "_duration.txt");
             if (profilingFile.is_open()) {
                 profilingFile << duration << " ms\n";
                 profilingFile.close();
@@ -168,9 +170,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (saveDataOn) {
-            std::string out_file =
-                results_dir.string() + "/" + RESULTS_FILE_NAME + "_" + std::to_string(reg_wave_num) + ".txt";
-            std::ofstream outputFile(out_file);
+            std::ofstream outputFile(out_dir + "/" + RESULTS_FILE_NAME + "_" + std::to_string(reg_wave_num) + ".txt");
             if (outputFile.is_open()) {
                 outputFile.precision(10);
                 outputFile.width(12);

@@ -17,14 +17,12 @@ function(build_regression_test TEST_GROUP TEST_NAME MULTIPLE)
      set(FILE_RST ${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP}/results_${TEST_NAME}.txt)
    endif()
 
-   file(MAKE_DIRECTORY ${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP})
-
    add_executable(${TEST_EXE} ${TEST_SRC})
    source_group("" FILES ${TEST_SRC})
       
    target_compile_definitions(${TEST_EXE} 
 	   PRIVATE
-       "RESULTS_DIR_NAME=\"${HYDROCHRONO_TEST_OUTPUT_DIR}/${TEST_GROUP}\""
+       "RESULTS_DIR_NAME=\"${TEST_GROUP}\""
        "RESULTS_FILE_NAME=\"results_${TEST_NAME}\""
    )
 

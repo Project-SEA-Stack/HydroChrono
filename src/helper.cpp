@@ -43,7 +43,12 @@ int hydroc::SetInitialEnvironment(int argc, char* argv[]) noexcept {
         DATADIR = absolute(path(env_p));
     }
 
-    chrono::SetChronoDataPath(CHRONO_DATA_DIR);
+    // Set Chrono data directory
+    if (std::filesystem::exists(path(std::string(HC_DATA_DIR) + "/chrono"))) {
+        chrono::SetChronoDataPath(std::string(HC_DATA_DIR) + "/chrono/");
+    } else {
+        chrono::SetChronoDataPath(CHRONO_DATA_DIR);
+    }
 
     return 0;
 }

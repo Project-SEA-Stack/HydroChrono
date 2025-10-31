@@ -470,8 +470,11 @@ std::vector<double> IrregularWaves::GetFreeSurfaceElevation() {
     return free_surface_elevation_sampled_;
 }
 
-std::vector<double> IrregularWaves::GetEtaTimeData() {
-    return time_data_;
+std::vector<double> IrregularWaves::GetFreeSurfaceTime() const { return free_surface_time_sampled_; }
+std::vector<double> IrregularWaves::GetFrequenciesHz() const {
+    std::vector<double> out(spectrum_frequencies_.size());
+    for (int i = 0; i < spectrum_frequencies_.size(); ++i) out[i] = spectrum_frequencies_[i];
+    return out;
 }
 
 void IrregularWaves::ReadEtaFromFile() {
@@ -669,22 +672,7 @@ void IrregularWaves::CreateSpectrum() {
     auto omegas  = 2 * M_PI * spectrum_frequencies_;
     wavenumbers_ = ComputeWaveNumbers(omegas, water_depth_, g_);
 
-    // Open a file stream for writing
-    std::ofstream outputFile("spectral_densities.txt");
-    outputFile.precision(9);
-
-    // Check if the file stream is open
-    if (outputFile.is_open()) {
-        // Write the spectral densities and their corresponding frequencies to the file
-        for (size_t i = 0; i < spectral_densities_.size(); ++i) {
-            outputFile << spectrum_frequencies_[i] << " : " << spectral_densities_[i] << std::endl;
-        }
-
-        // Close the file stream
-        outputFile.close();
-    } else {
-        hydroc::cli::LogError("Unable to open file for writing.");
-    }
+    // Removed text file dump; this data will be written into HDF5 by the exporter when available.
 }
 
 // TODO put spectrum functions in a new namespace (when we have more options?)
@@ -780,21 +768,7 @@ void IrregularWaves::CreateFreeSurfaceElevation() {
         }
     }
 
-    // Open a file stream for writing
-    std::ofstream eta_output("eta.txt");
-    eta_output.precision(9);
-
-    // Check if the file stream is open
-    if (eta_output.is_open()) {
-        // Write the spectral densities and their corresponding frequencies to the file
-        for (size_t i = 0; i < free_surface_elevation_sampled_.size(); ++i) {
-            eta_output << free_surface_time_sampled_[i] << " : " << free_surface_elevation_sampled_[i] << std::endl;
-        }
-        // Close the file stream
-        eta_output.close();
-    } else {
-        hydroc::cli::LogError("Unable to open file for writing.");
-    }
+    // Removed text file dump; this data will be written into HDF5 by the exporter when available.
 
     hydroc::debug::LogDebug("Finished precalculating free surface elevation.");
 }
@@ -836,9 +810,9 @@ double IrregularWaves::ExcitationConvolution(int body, int dof, double time) {
             // get free surface elevation
             double eta_val;
             if (t_tau == t1) {
-                eta_val = free_surface_time_sampled_[idx];
+                eta_val = free_surface_elevation_sampled_[idx];
             } else if (t_tau == t2) {
-                eta_val = free_surface_time_sampled_[idx + 1];
+                eta_val = free_surface_elevation_sampled_[idx + 1];
             } else if (t_tau > t1 && t_tau < t2) {
                 // linearly interpolate free surface elevation between bounds
                 auto eta1 = free_surface_elevation_sampled_[idx];

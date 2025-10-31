@@ -56,7 +56,8 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
         params.ramp_duration_ = ramp_duration;
         params.wave_height_ = wave_settings.height;
         params.wave_period_ = wave_settings.period;
-        params.seed_ = 1;  // Default seed, could be made configurable
+        // Use YAML-provided seed if available; fall back to a default deterministic seed
+        params.seed_ = (wave_settings.seed > 0 ? wave_settings.seed : 1);
         
         auto irregular_wave = std::make_shared<IrregularWaves>(params);
         

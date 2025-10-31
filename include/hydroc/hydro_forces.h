@@ -218,6 +218,8 @@ class TestHydro {
      * @return 6N dimensional force for 6 DOF and N bodies in system (already Eigen type).
      */
     Eigen::VectorXd ComputeForceWaves();
+    // Expose the wave object (read-only) so callers can query inputs if needed
+    std::shared_ptr<WaveBase> GetWave() const { return user_waves_; }
 
     /**
      * @brief Fetches the RIRF value from the h5 file based on the provided indices.

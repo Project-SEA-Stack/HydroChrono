@@ -5,6 +5,7 @@
 
 #include <hydroc/simulation_exporter.h>
 #include <hydroc/h5_writer.h>
+#include <hydroc/wave_types.h>
 #include <hydroc/version.h>
 #include <hydroc/logging.h>
 
@@ -81,6 +82,8 @@ struct SimulationExporter::Impl {
     H5Writer::Group g_results_model_tsdas;
     H5Writer::Group g_results_model_rsdas;
     H5Writer::Group g_results_model_joints;
+    // irregular waves datasets (inputs)
+    H5Writer::Group g_inputs_waves_irregular;
     // meta subtree
     H5Writer::Group g_meta;
 
@@ -184,6 +187,7 @@ struct SimulationExporter::Impl {
         g_inputs_sim_time = writer.RequireGroup("/inputs/simulation/time");
         g_inputs_sim_env = writer.RequireGroup("/inputs/simulation/environment");
         g_inputs_sim_waves = writer.RequireGroup("/inputs/simulation/waves");
+        g_inputs_waves_irregular = writer.RequireGroup("/inputs/simulation/waves/irregular");
         // results
         g_results = writer.RequireGroup("/results");
         g_results_model = writer.RequireGroup("/results/model");
@@ -347,6 +351,7 @@ void SimulationExporter::WriteSimulationInfo(chrono::ChSystem* system,
         g_waves.WriteAttribute("Hs", impl_->options.scenario_Hs);
         g_waves.WriteAttribute("Tp", impl_->options.scenario_Tp);
         if (impl_->options.scenario_seed >= 0) g_waves.WriteAttribute("seed", static_cast<double>(impl_->options.scenario_seed));
+        // Group already reserved in ctor; datasets will be written later if available
     }
 }
 
@@ -357,6 +362,36 @@ void SimulationExporter::WriteInitialConditions(chrono::ChSystem* ,
                                                 double ) {
     // Deprecated in schema v0.3: handled in WriteSimulationInfo under inputs/simulation/*
 }
+void SimulationExporter::WriteIrregularInputs(const std::vector<double>& frequencies_hz,
+                                             const std::vector<double>& spectral_densities,
+                                             const std::vector<double>& free_surface_time,
+                                             const std::vector<double>& free_surface_eta) {
+    auto g = impl_->g_inputs_waves_irregular;
+    // Write datasets if provided (skip empty vectors)
+    if (!frequencies_hz.empty()) {
+        std::array<hsize_t,1> d1 = {static_cast<hsize_t>(frequencies_hz.size())};
+        g.WriteDataset("frequencies_hz", frequencies_hz, d1);
+        g.WriteAttribute("frequencies_hz.units", std::string("Hz"));
+    }
+    if (!spectral_densities.empty()) {
+        std::array<hsize_t,1> d1 = {static_cast<hsize_t>(spectral_densities.size())};
+        g.WriteDataset("spectral_densities", spectral_densities, d1);
+        g.WriteAttribute("spectral_densities.units", std::string("m^2/Hz"));
+        g.WriteAttribute("spectral_densities.convention", std::string("JONSWAP (if gamma>1), else PM"));
+    }
+    if (!free_surface_time.empty()) {
+        std::array<hsize_t,1> d1 = {static_cast<hsize_t>(free_surface_time.size())};
+        g.WriteDataset("free_surface_time", free_surface_time, d1);
+        g.WriteAttribute("free_surface_time.units", std::string("s"));
+    }
+    if (!free_surface_eta.empty()) {
+        std::array<hsize_t,1> d1 = {static_cast<hsize_t>(free_surface_eta.size())};
+        g.WriteDataset("free_surface_eta", free_surface_eta, d1);
+        g.WriteAttribute("free_surface_eta.units", std::string("m"));
+        g.WriteAttribute("free_surface_eta.location", std::string("x=0,y=0,z=0 (assumed)"));
+    }
+}
+
 
 void SimulationExporter::WriteModel(chrono::ChSystem* system) {
     if (system == nullptr) {

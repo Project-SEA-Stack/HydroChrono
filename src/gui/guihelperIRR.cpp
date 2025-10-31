@@ -26,7 +26,6 @@ class hydroc::gui::GUIImplIRR::MyActionReceiver : public irr::IEventReceiver {
   private:
     chrono::irrlicht::ChVisualSystemIrrlicht* vis;
     irr::gui::IGUIButton* pauseButton;
-    irr::gui::IGUIStaticText* buttonText;
 
     bool& pressed;
 };
@@ -40,8 +39,18 @@ void hydroc::gui::GUIImplIRR::MyActionReceiver::Init(chrono::irrlicht::ChVisualS
     vis = vsys;
 
     // ..add a GUI button to control pause/play
-    pauseButton = vis->GetGUIEnvironment()->addButton(rect<s32>(510, 20, 650, 35));
-    buttonText  = vis->GetGUIEnvironment()->addStaticText(L"Paused", rect<s32>(560, 20, 600, 35), false);
+    pauseButton = vis->GetGUIEnvironment()->addButton(rect<s32>(500, 18, 700, 50));
+    pauseButton->setIsPushButton(true);
+    pauseButton->setScaleImage(true);
+    // Increase text visibility by adjusting the skin font was done in Init; ensure border size is sane
+    if (auto* skin = vis->GetGUIEnvironment()->getSkin()) {
+        skin->setSize(irr::gui::EGDS_BUTTON_PRESSED_IMAGE_OFFSET_X, 2);
+        skin->setSize(irr::gui::EGDS_BUTTON_PRESSED_IMAGE_OFFSET_Y, 2);
+        // Optional: increase button text distance to border for clarity
+        skin->setSize(irr::gui::EGDS_TEXT_DISTANCE_X, 6);
+        skin->setSize(irr::gui::EGDS_TEXT_DISTANCE_Y, 3);
+    }
+    pauseButton->setText(L"Paused");
 }
 
 bool hydroc::gui::GUIImplIRR::MyActionReceiver::OnEvent(const irr::SEvent& event) {
@@ -51,9 +60,9 @@ bool hydroc::gui::GUIImplIRR::MyActionReceiver::OnEvent(const irr::SEvent& event
             case EGUI_EVENT_TYPE::EGET_BUTTON_CLICKED:
                 pressed = !pressed;
                 if (pressed) {
-                    buttonText->setText(L"Playing");
+                    pauseButton->setText(L"Playing");
                 } else {
-                    buttonText->setText(L"Paused");
+                    pauseButton->setText(L"Paused");
                 }
                 return pressed;
                 break;
@@ -115,11 +124,24 @@ void GUIImplIRR::Init(UI& ui, chrono::ChSystem* system, const char* title) {
     }
 
     try {
-        hydroc::debug::LogDebug("🔍 GUIImplIRR::Init - Setting up event receiver...");
+        hydroc::debug::LogDebug("🔍 GUIImplIRR::Init - Setting up GUI skin and event receiver...");
+        // Improve GUI readability: use built-in font for crisper text
+        try {
+            auto* env  = pVis->GetGUIEnvironment();
+            auto* skin = env ? env->getSkin() : nullptr;
+            if (env && skin) {
+                auto* builtin = env->getBuiltInFont();
+                if (builtin) {
+                    skin->setFont(builtin);
+                }
+            }
+        } catch (...) {
+            // non-fatal if font override fails
+        }
         InitReceiver(ui.simulationStarted);
         receiver->Init(pVis.get());
         pVis->AddUserEventReceiver(receiver.get());
-        hydroc::debug::LogDebug("✅ Event receiver set up successfully");
+        hydroc::debug::LogDebug("✅ GUI skin and event receiver set up successfully");
     } catch (const std::exception& e) {
         hydroc::cli::LogError(std::string("🔥 Exception during receiver setup: ") + e.what());
         // Don't re-throw here, receiver is optional

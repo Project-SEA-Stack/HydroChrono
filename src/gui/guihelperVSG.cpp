@@ -26,7 +26,7 @@ class MyComponentVSG : public chrono::vsg3d::ChGuiComponentVSG {
         ImGui::SetNextWindowSize(ImVec2(300, 0));
         ImGui::Begin("HydroChrono", NULL, window_flags);
 
-        if (ImGui::Button(pressed ? "Playing" : "Paused")) {
+        if (ImGui::Button(pressed ? "Playing" : "Paused", ImVec2(200, 40))) {
             pressed = !pressed;
         }
 

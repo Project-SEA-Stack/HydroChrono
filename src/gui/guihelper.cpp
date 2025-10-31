@@ -31,7 +31,6 @@ bool UI::IsRunning(double timestep) {
 // -----------------------------------------------------------------------------
 
 GUI::GUI() {
-
 #if defined(HYDROCHRONO_HAVE_VSG)
     pImpl = std::make_shared<hydroc::gui::GUIImplVSG>();
 #elif defined(HYDROCHRONO_HAVE_IRRLICHT)

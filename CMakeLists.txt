@@ -109,6 +109,7 @@ endif()
 
 option(HYDROCHRONO_ENABLE_TESTS "Enable tests" ON)
 option(HYDROCHRONO_ENABLE_IRRLICHT "Enable irrlicht visualization library" OFF)
+option(HYDROCHRONO_ENABLE_VSG "Enable VSG visualization library" OFF)
 option(HYDROCHRONO_ENABLE_DEMOS "Enable demo executables" OFF)
 option(HYDROCHRONO_ENABLE_YAML_RUNNER "Enable YAML-based CLI runner" OFF)
 option(HYDROCHRONO_ENABLE_USER_DOC "User's documentation" OFF)
@@ -205,7 +206,7 @@ endif()
 find_package(Chrono
              CONFIG REQUIRED
              COMPONENTS Parsers
-             OPTIONAL_COMPONENTS Irrlicht)
+             OPTIONAL_COMPONENTS Irrlicht VSG)
 
 message(STATUS "----\n")
 
@@ -244,16 +245,30 @@ if(HYDROCHRONO_ENABLE_IRRLICHT AND NOT TARGET Chrono::Chrono_irrlicht)
   message(FATAL_ERROR "HYDROCHRONO_ENABLE_IRRLICHT is ON but Chrono::Chrono_irrlicht target not found. Ensure Chrono was built with Irrlicht support.")
 endif()
 
+# Enable VSG support if requested and available
+if(HYDROCHRONO_ENABLE_VSG AND NOT TARGET Chrono::Chrono_vsg)
+  message(FATAL_ERROR "HYDROCHRONO_ENABLE_VSG is ON but Chrono::Chrono_vsg target not found. Ensure Chrono was built with VSG support.")
+endif()
+
 # If on a Windows platform, copy the Chrono DLLs to the binary directory
 add_CHRONO_DLLS_copy_command()
 
 # Copy selected Chrono data directories to the HydroChrono data directory
 if(EXISTS "${CHRONO_DATA_DIR}")
+    if(EXISTS "${CHRONO_DATA_DIR}/colormaps")
+        file(COPY ${CHRONO_DATA_DIR}/colormaps DESTINATION ${HC_BUILD_DATA}/chrono)
+    endif()
+
     if(EXISTS "${CHRONO_DATA_DIR}/skybox")
         file(COPY ${CHRONO_DATA_DIR}/skybox DESTINATION ${HC_BUILD_DATA}/chrono)
     endif()
-    if(EXISTS "${CHRONO_DATA_DIR}/colormaps")
-        file(COPY ${CHRONO_DATA_DIR}/colormaps DESTINATION ${HC_BUILD_DATA}/chrono)
+
+    if(EXISTS "${CHRONO_DATA_DIR}/vsg")
+        file(COPY ${CHRONO_DATA_DIR}/vsg DESTINATION ${HC_BUILD_DATA}/chrono)
+    endif()
+
+    if(EXISTS "${CHRONO_DATA_DIR}/logo_chrono_alpha.png")
+        file(COPY ${CHRONO_DATA_DIR}/logo_chrono_alpha.png DESTINATION ${HC_BUILD_DATA}/chrono)
     endif()
 endif()
 
@@ -277,6 +292,12 @@ else()
   set(HC_HAS_IRRLICHT "#undef HYDROCHRONO_HAVE_IRRLICHT")
 endif()
 
+if(HYDROCHRONO_ENABLE_VSG)
+  set(HC_HAS_VSG "#define HYDROCHRONO_HAVE_VSG")
+else()
+  set(HC_HAS_VSG "#undef HYDROCHRONO_HAVE_VSG")
+endif()
+
 # For BUILD tree
 set(HC_DATA_DIR "#define HC_DATA_DIR \"${HC_BUILD_DATA}\"")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
@@ -293,43 +314,23 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
 # ------- Core Library Target ---------------------------------------------------
 # ===============================================================================
 
-# Helper function to configure common HydroChrono target properties
-# Now uses modern Chrono imported targets (Chrono ≥ v9.1.0)
-function(configure_hydro_target tgt)
-    target_compile_features(${tgt} PUBLIC ${HC_CXX_STANDARD})
-    
-    list(APPEND HC_INCLUDES_BUILD ${PROJECT_SOURCE_DIR}/include)
-    list(APPEND HC_INCLUDES_BUILD ${PROJECT_BINARY_DIR})
-    target_include_directories(${tgt}
-        PUBLIC
-            "$<BUILD_INTERFACE:${HC_INCLUDES_BUILD}>"
-            "$<INSTALL_INTERFACE:include>"
-    )
-    
-    # Enable position-independent code for static library linking
-    set_target_properties(${tgt} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    
-    # Link to modern Chrono imported targets - these automatically propagate
-    # include paths, compile flags, and link dependencies
-    target_link_libraries(${tgt}
-        PUBLIC
-            Chrono::Chrono_core
-            # Conditionally link Irrlicht component if enabled
-            $<$<BOOL:${HYDROCHRONO_ENABLE_IRRLICHT}>:Chrono::Chrono_irrlicht>
-    )
-endfunction()
+list(APPEND HC_INCLUDES_BUILD ${PROJECT_SOURCE_DIR}/include)
+list(APPEND HC_INCLUDES_BUILD ${PROJECT_BINARY_DIR})
 
 # Helper function to configure test environment (Windows DLL paths, etc.)
 function(configure_test_environment)
     # Set up DLL search paths for Windows testing
     set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
+    
     # Always include our build output bin directories for all common configs
     set(HC_BIN_DIRS "${CMAKE_BINARY_DIR}/bin/Release;${CMAKE_BINARY_DIR}/bin/RelWithDebInfo;${CMAKE_BINARY_DIR}/bin/MinSizeRel;${CMAKE_BINARY_DIR}/bin/Debug")
+    
     # Include HDF5 bin if available to stabilize test runtime on clean systems
     set(HDF5_DLL_DIR "")
     if(DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/bin")
         set(HDF5_DLL_DIR "${HDF5_ROOT}/bin")
     endif()
+
     # Derive Irrlicht DLL dir from Irrlicht_ROOT provided by user config
     set(IRRLICHT_DLL_DIR "")
     if(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
@@ -353,7 +354,7 @@ function(configure_test_environment)
 endfunction()
 
 # -- Main HydroChrono Library --
-set(HYDROCHRONO_SOURCES
+set(HC_SOURCES
     src/h5fileinfo.cpp
     src/chloadaddedmass.cpp
     src/hydro_forces.cpp
@@ -369,7 +370,7 @@ set(HYDROCHRONO_SOURCES
     src/simulation_exporter.cpp
 )
 
-set(HYDROCHRONO_HEADERS
+set(HC_HEADERS
     ${PROJECT_BINARY_DIR}/hydroc/config.h
     ${PROJECT_BINARY_DIR}/hydroc/version.h
     include/hydroc/h5_writer.h
@@ -380,8 +381,16 @@ set(HYDROCHRONO_HEADERS
 )
 
 # Create the library target and configure it
-add_library(HydroChrono ${HYDROCHRONO_SOURCES} ${HYDROCHRONO_HEADERS})
-configure_hydro_target(HydroChrono)
+add_library(HydroChrono ${HC_SOURCES} ${HC_HEADERS})
+
+target_compile_features(HydroChrono PUBLIC ${HC_CXX_STANDARD})
+target_include_directories(HydroChrono
+    PUBLIC
+        "$<BUILD_INTERFACE:${HC_INCLUDES_BUILD}>"
+        "$<INSTALL_INTERFACE:include>"
+)
+set_target_properties(HydroChrono PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(HydroChrono PUBLIC Chrono::Chrono_core)
 
 # Add OpenMP
 target_link_libraries(HydroChrono PUBLIC OpenMP::OpenMP_CXX)
@@ -433,7 +442,39 @@ target_compile_definitions(HydroChrono
 )
 
 # ===============================================================================
-# ------- Auxiliary Targets (GUI, Tests, Demos) ---------------------------------
+# ------- Visualization library -------------------------------------------------
+# ===============================================================================
+
+set(HCGUI_HEADERS
+    include/hydroc/gui/guihelper.h
+    src/gui/guihelper_impl.h
+)
+
+set(HCGUI_SOURCES
+    src/gui/guihelper.cpp
+    src/gui/guihelperIRR.cpp
+    src/gui/guihelperVSG.cpp
+)
+
+add_library(HydroChronoGUI ${HCGUI_SOURCES} ${HCGUI_HEADERS})
+
+target_compile_features(HydroChronoGUI PUBLIC ${HC_CXX_STANDARD})
+target_include_directories(HydroChronoGUI
+    PUBLIC
+        "$<BUILD_INTERFACE:${HC_INCLUDES_BUILD}>"
+        "$<INSTALL_INTERFACE:include>"
+)
+set_target_properties(HydroChronoGUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(HydroChronoGUI
+    PUBLIC
+        Chrono::Chrono_core
+        # Conditionally link Irrlicht and VSG components if enabled
+        $<$<BOOL:${HYDROCHRONO_ENABLE_IRRLICHT}>:Chrono::Chrono_irrlicht>
+        $<$<BOOL:${HYDROCHRONO_ENABLE_VSG}>:Chrono::Chrono_vsg>
+)
+
+# ===============================================================================
+# ------- Auxiliary Targets (app, tests, demos) ---------------------------------
 # ===============================================================================
 
 # YAML-driven CLI app
@@ -442,10 +483,6 @@ if(HYDROCHRONO_ENABLE_YAML_RUNNER)
 else()
     message(STATUS "YAML runner disabled - not creating run_hydrochrono target")
 endif()
-
-# Separate library for Irrlicht visualization helpers
-add_library(HydroChronoGUI src/gui/guihelper.cpp)
-configure_hydro_target(HydroChronoGUI)
 
 # Demos
 if(HYDROCHRONO_ENABLE_DEMOS)

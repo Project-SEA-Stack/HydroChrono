@@ -12,6 +12,9 @@
 // If HydroChrono was built with Irrlicht support, define HYDROCHRONO_HAVE_IRRLICHT
 @HC_HAS_IRRLICHT@
 
+// If HydroChrono was built with VSG support, define HYDROCHRONO_HAVE_VSG
+@HC_HAS_VSG@
+
 // Path to HydroChrono data directory
 @HC_DATA_DIR@
 

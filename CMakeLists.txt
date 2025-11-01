@@ -317,42 +317,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in
 list(APPEND HC_INCLUDES_BUILD ${PROJECT_SOURCE_DIR}/include)
 list(APPEND HC_INCLUDES_BUILD ${PROJECT_BINARY_DIR})
 
-# Helper function to configure test environment (Windows DLL paths, etc.)
-function(configure_test_environment)
-    # Set up DLL search paths for Windows testing
-    set(CHRONO_DLL_DIR "${Chrono_DIR}/../bin/Release")
-    
-    # Always include our build output bin directories for all common configs
-    set(HC_BIN_DIRS "${CMAKE_BINARY_DIR}/bin/Release;${CMAKE_BINARY_DIR}/bin/RelWithDebInfo;${CMAKE_BINARY_DIR}/bin/MinSizeRel;${CMAKE_BINARY_DIR}/bin/Debug")
-    
-    # Include HDF5 bin if available to stabilize test runtime on clean systems
-    set(HDF5_DLL_DIR "")
-    if(DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/bin")
-        set(HDF5_DLL_DIR "${HDF5_ROOT}/bin")
-    endif()
-
-    # Derive Irrlicht DLL dir from Irrlicht_ROOT provided by user config
-    set(IRRLICHT_DLL_DIR "")
-    if(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
-        set(IRRLICHT_DLL_DIR "${Irrlicht_ROOT}/bin/Win64-VisualStudio")
-    elseif(DEFINED Irrlicht_ROOT AND EXISTS "${Irrlicht_ROOT}/bin")
-        set(IRRLICHT_DLL_DIR "${Irrlicht_ROOT}/bin")
-    endif()
-    if(IRRLICHT_DLL_DIR)
-        if(HDF5_DLL_DIR)
-            set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};${HDF5_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
-        else()
-            set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${IRRLICHT_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
-        endif()
-    else()
-        if(HDF5_DLL_DIR)
-            set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};${HDF5_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
-        else()
-            set(TEST_ENVIRONMENT "PATH=${HC_BIN_DIRS};${CHRONO_DLL_DIR};$ENV{PATH}" PARENT_SCOPE)
-        endif()
-    endif()
-endfunction()
-
 # -- Main HydroChrono Library --
 set(HC_SOURCES
     src/h5fileinfo.cpp
@@ -395,7 +359,7 @@ target_link_libraries(HydroChrono PUBLIC Chrono::Chrono_core)
 # Add OpenMP
 target_link_libraries(HydroChrono PUBLIC OpenMP::OpenMP_CXX)
 
-# Add HDF5 (assume first latest HDF5 version 1.14.6)
+# Add HDF5 (assume first latest HDF5 version 1.14.6 and prefer static library)
 if(TARGET hdf5-static)
   message(STATUS "Linking static libraries hdf5-static")
   target_link_libraries(HydroChrono PUBLIC hdf5-static)
@@ -477,6 +441,64 @@ target_link_libraries(HydroChronoGUI
 # ------- Auxiliary Targets (app, tests, demos) ---------------------------------
 # ===============================================================================
 
+# Helper function to configure test environment (Windows DLL paths, etc.)
+function(configure_test_environment)
+    message(STATUS "Configure test environment")
+    
+    # HydroChrono DLL paths
+    set(HC_DLL_DIRS "${CMAKE_BINARY_DIR}/bin/Release;${CMAKE_BINARY_DIR}/bin/RelWithDebInfo;${CMAKE_BINARY_DIR}/bin/MinSizeRel;${CMAKE_BINARY_DIR}/bin/Debug")
+    message(STATUS "  HydroChrono DLL directories:      ${HC_DLL_DIRS}")
+    list(APPEND DLL_DIRS ${HC_DLL_DIRS})
+
+    # Chrono DLL paths
+    get_target_property(CHRONO_CORE_REL_DLL Chrono::Chrono_core IMPORTED_LOCATION_RELEASE)
+    if(CHRONO_CORE_REL_DLL)
+        get_filename_component(dir ${CHRONO_CORE_REL_DLL} DIRECTORY)
+        message(STATUS "  Chrono release DLL directory:     ${dir}")
+        list(APPEND DLL_DIRS ${dir})
+    endif()
+    get_target_property(CHRONO_CORE_DBG_DLL Chrono::Chrono_core IMPORTED_LOCATION_DEBUG)
+    if(CHRONO_CORE_DBG_DLL)
+        get_filename_component(dir ${CHRONO_CORE_DBG_DLL} DIRECTORY)
+        message(STATUS "  Chrono debug DLL directory:       ${dir}")
+        list(APPEND DLL_DIRS ${dir})
+    endif()
+
+    # HDF5 DLL path
+    if(TARGET hdf5-static)
+        message(STATUS "  No HDF5 DLL (hdf5-static)")
+    elseif(TARGET hdf5-shared)
+        get_target_property(dll hdf5-shared IMPORTED_LOCATION_RELEASE)
+        get_filename_component(dir ${dll} DIRECTORY)
+        message(STATUS "  HDF5 DLL directory (hdf5-shared): ${dir}")
+        list(APPEND DLL_DIRS ${dir})
+    elseif(TARGET HDF5::HDF5)
+        get_target_property(dll HDF5::HFDF5 IMPORTED_LOCATION_RELEASE)
+        get_filename_component(dir ${dll} DIRECTORY)
+        message(STATUS "  HDF5 DLL directory (HDF5::HDF5):  ${dir}")
+        list(APPEND DLL_DIRS ${dir})
+    elseif(DEFINED HDF5_ROOT AND EXISTS "${HDF5_ROOT}/bin")
+        message(STATUS "  HDF5 DLL directory (HDF5_ROOT):   ${HDF5_ROOT}/bin")
+        list(APPEND DLL_DIRS ${HDF5_ROOT}/bin)
+    else()
+        message(STATUS "  Cannot infer HDF5 DLL directory")
+    endif()
+
+    # Irrlicht DLL path
+    if(HYDROCHRONO_ENABLE_IRRLICHT)
+        message(STATUS "  Irrlicht DLL directory:           ${Irrlicht_DLL_DIR}")
+        list(APPEND DLL_DIRS ${Irrlicht_DLL_DIR})
+    endif()
+
+    # VSG DLL path
+    if(HYDROCHRONO_ENABLE_VSG)
+        message(STATUS "  VSG DLL directory:                ${VSG_DLL_DIR}")
+        list(APPEND DLL_DIRS ${VSG_DLL_DIR})
+    endif()
+
+    set(TEST_ENVIRONMENT "PATH=${DLL_DIRS};$ENV{PATH}" PARENT_SCOPE)
+endfunction()
+
 # YAML-driven CLI app
 if(HYDROCHRONO_ENABLE_YAML_RUNNER)
     add_subdirectory(app)
@@ -502,7 +524,9 @@ if(HYDROCHRONO_ENABLE_TESTS)
     enable_testing()
     
     # Configure test environment with DLL paths
-    configure_test_environment()
+    if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+        configure_test_environment()
+    endif()
 
     add_subdirectory(tests/regression)
 endif()
